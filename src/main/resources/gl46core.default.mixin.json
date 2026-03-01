@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "package": "com.github.gl46core.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "target": "@env(DEFAULT)",
+  "client": [
+    "MixinGlStateManager",
+    "MixinBooleanState",
+    "MixinWorldVertexBufferUploader",
+    "MixinVboRenderList",
+    "MixinModelRenderer",
+    "MixinOpenGlHelper",
+    "MixinSplashProgress",
+    "MixinFMLClientHandler",
+    "MixinCloudRenderer"
+  ],
+  "mixins": [],
+  "server": [],
+  "setSourceFile": true,
+  "minVersion": "0.8.7"
+}
