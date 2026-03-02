@@ -247,37 +247,39 @@ public final class CoreSplashRenderer {
     // ═════════════════════════════════════════════════════════════════
 
     private static void initSplashGL() {
-        String vertSrc =
-                "#version 150 core\n" +
-                "in vec2 aPos;\n" +
-                "in vec2 aTex;\n" +
-                "in vec4 aCol;\n" +
-                "uniform mat4 uMVP;\n" +
-                "out vec2 vTex;\n" +
-                "out vec4 vCol;\n" +
-                "void main() {\n" +
-                "    gl_Position = uMVP * vec4(aPos, 0.0, 1.0);\n" +
-                "    vTex = aTex;\n" +
-                "    vCol = aCol;\n" +
-                "}\n";
+        String vertSrc = """
+                #version 150 core
+                in vec2 aPos;
+                in vec2 aTex;
+                in vec4 aCol;
+                uniform mat4 uMVP;
+                out vec2 vTex;
+                out vec4 vCol;
+                void main() {
+                    gl_Position = uMVP * vec4(aPos, 0.0, 1.0);
+                    vTex = aTex;
+                    vCol = aCol;
+                }
+                """;
 
-        String fragSrc =
-                "#version 150 core\n" +
-                "in vec2 vTex;\n" +
-                "in vec4 vCol;\n" +
-                "uniform sampler2D uTexture;\n" +
-                "uniform bool uTextureEnabled;\n" +
-                "uniform vec4 uColor;\n" +
-                "out vec4 fragColor;\n" +
-                "void main() {\n" +
-                "    vec4 color = vCol * uColor;\n" +
-                "    if (uTextureEnabled) {\n" +
-                "        vec4 tex = texture(uTexture, vTex);\n" +
-                "        color *= tex;\n" +
-                "    }\n" +
-                "    if (color.a < 0.01) discard;\n" +
-                "    fragColor = color;\n" +
-                "}\n";
+        String fragSrc = """
+                #version 150 core
+                in vec2 vTex;
+                in vec4 vCol;
+                uniform sampler2D uTexture;
+                uniform bool uTextureEnabled;
+                uniform vec4 uColor;
+                out vec4 fragColor;
+                void main() {
+                    vec4 color = vCol * uColor;
+                    if (uTextureEnabled) {
+                        vec4 tex = texture(uTexture, vTex);
+                        color *= tex;
+                    }
+                    if (color.a < 0.01) discard;
+                    fragColor = color;
+                }
+                """;
 
         int vert = GL20.glCreateShader(GL20.GL_VERTEX_SHADER);
         GL20.glShaderSource(vert, vertSrc);

@@ -13,7 +13,7 @@ import org.lwjgl.system.MemoryUtil;
 public class GL46Core {
     public static final String MODID = "gl46core";
     public static final String NAME = "GL46 Core";
-    public static final String VERSION = "0.1.0";
+    public static final String VERSION = "0.2.0";
 
     public static final Logger LOGGER = LogManager.getLogger(MODID);
 

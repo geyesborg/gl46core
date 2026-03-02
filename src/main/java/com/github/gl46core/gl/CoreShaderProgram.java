@@ -86,7 +86,7 @@ public final class CoreShaderProgram {
 
     public static void endFrame() {
         frameCounter++;
-        if (frameCounter % 200 == 0) {
+        if (frameCounter % 6000 == 0) {
             GL46Core.LOGGER.info("[Perf] fullBinds={} fastPath={} pfUploads={} pdUploads={}",
                 frameFullBindCount, frameFastPathCount, framePerFrameUploads, framePerDrawUploads);
         }
@@ -95,9 +95,6 @@ public final class CoreShaderProgram {
         framePerFrameUploads = 0;
         framePerDrawUploads = 0;
     }
-
-    // Track whether our shader is currently bound to skip redundant glUseProgram
-    private static boolean shaderCurrentlyBound = false;
 
     private CoreShaderProgram() {}
 
@@ -160,18 +157,19 @@ public final class CoreShaderProgram {
     /**
      * Bind the shader and upload UBO data from CoreMatrixStack + CoreStateTracker.
      * Uses dirty flags to skip matrix computation and buffer operations entirely.
-     * Skips glUseProgram if our shader is already the active program.
      */
     public void bind(boolean hasColor, boolean hasTexCoord, boolean hasNormal, boolean hasLightMap) {
         if (programId == 0) return;
 
-        if (!shaderCurrentlyBound) {
-            GL20.glUseProgram(programId);
-            shaderCurrentlyBound = true;
-            frameFullBindCount++;
-        } else {
-            frameFastPathCount++;
-        }
+        // Always call glUseProgram — the driver no-ops if the same program is
+        // already active, and this avoids stale-flag bugs when other mods
+        // (Nvidium, Celeritas, Iris) call glUseProgram() directly mid-frame.
+        GL20.glUseProgram(programId);
+        // Re-bind our UBOs to their binding points — other mods (Nvidium) may
+        // have overwritten binding points 0/1 with their own UBOs mid-frame.
+        GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, perFrameUbo);
+        GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 1, perDrawUbo);
+        frameFullBindCount++;
 
         CoreMatrixStack ms = CoreMatrixStack.INSTANCE;
         CoreStateTracker state = CoreStateTracker.INSTANCE;
@@ -277,7 +275,6 @@ public final class CoreShaderProgram {
     /** Unbind shader and invalidate dirty cache */
     public void unbind() {
         GL20.glUseProgram(0);
-        shaderCurrentlyBound = false;
         invalidateAll();
     }
 

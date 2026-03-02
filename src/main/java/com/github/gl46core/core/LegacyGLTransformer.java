@@ -3,6 +3,9 @@ package com.github.gl46core.core;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.*;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * ASM transformer that redirects direct GL11/GLU legacy calls that bypass GlStateManager.
  *
@@ -19,28 +22,113 @@ public class LegacyGLTransformer implements IClassTransformer {
 
     private static final String REDIRECTS = "com/github/gl46core/gl/LegacyGLRedirects";
 
+    /**
+     * A redirect entry: maps a source (owner + method + descriptor) to a target method name.
+     * The target descriptor is always the same as the source unless overridden.
+     */
+    private record Redirect(String targetMethod, String targetDesc) {
+        Redirect(String targetMethod) {
+            this(targetMethod, null); // null = use source descriptor
+        }
+    }
+
+    /**
+     * Lookup key for a GL method call: owner class + method name + descriptor.
+     * Descriptor may be null for "match any descriptor" (used for GLU methods).
+     */
+    private record CallKey(String owner, String method, String desc) {}
+
+    // ── Redirect table: populated once at class load ─────────────────
+    private static final Map<CallKey, Redirect> REDIRECT_TABLE = buildRedirectTable();
+
+    private static Map<CallKey, Redirect> buildRedirectTable() {
+        var table = new HashMap<CallKey, Redirect>();
+
+        // GL11 matrix ops
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glMultMatrix", "(Ljava/nio/FloatBuffer;)V"),
+                  new Redirect("glMultMatrix", "(Ljava/nio/FloatBuffer;)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glLoadIdentity", "()V"),
+                  new Redirect("glLoadIdentity", "()V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glMatrixMode", "(I)V"),
+                  new Redirect("glMatrixMode", "(I)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glPushMatrix", "()V"),
+                  new Redirect("glPushMatrix", "()V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glPopMatrix", "()V"),
+                  new Redirect("glPopMatrix", "()V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glRotatef", "(FFFF)V"),
+                  new Redirect("glRotatef", "(FFFF)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glScalef", "(FFF)V"),
+                  new Redirect("glScalef", "(FFF)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glTranslatef", "(FFF)V"),
+                  new Redirect("glTranslatef", "(FFF)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glTranslated", "(DDD)V"),
+                  new Redirect("glTranslated", "(DDD)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glOrtho", "(DDDDDD)V"),
+                  new Redirect("glOrtho", "(DDDDDD)V"));
+
+        // GL11 color
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glColor4f", "(FFFF)V"),
+                  new Redirect("glColor4f", "(FFFF)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glColor3f", "(FFF)V"),
+                  new Redirect("glColor3f", "(FFF)V"));
+
+        // GL11 immediate mode
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glBegin", "(I)V"),
+                  new Redirect("glBegin", "(I)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glEnd", "()V"),
+                  new Redirect("glEnd", "()V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glVertex3f", "(FFF)V"),
+                  new Redirect("glVertex3f", "(FFF)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glVertex2f", "(FF)V"),
+                  new Redirect("glVertex2f", "(FF)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glTexCoord2f", "(FF)V"),
+                  new Redirect("glTexCoord2f", "(FF)V"));
+        table.put(new CallKey("org/lwjgl/opengl/GL11", "glNormal3f", "(FFF)V"),
+                  new Redirect("glNormal3f", "(FFF)V"));
+
+        // GLU / Project — match any descriptor (desc = null in key)
+        table.put(new CallKey("org/lwjgl/util/glu/GLU", "gluPerspective", null),
+                  new Redirect("gluPerspective"));
+        table.put(new CallKey("org/lwjgl/util/glu/Project", "gluPerspective", null),
+                  new Redirect("gluPerspective"));
+        table.put(new CallKey("org/lwjgl/util/glu/GLU", "gluLookAt", null),
+                  new Redirect("gluLookAt"));
+        table.put(new CallKey("org/lwjgl/util/glu/Project", "gluLookAt", null),
+                  new Redirect("gluLookAt"));
+
+        return Map.copyOf(table);
+    }
+
+    // ── Excluded package prefixes ────────────────────────────────────
+    private static final String[] EXCLUDED_PREFIXES = {
+        "com.github.gl46core.",        // our own mod
+        "org.lwjgl.",                  // LWJGL itself
+        "org.objectweb.asm.",          // ASM library
+        "org.spongepowered.asm.",      // Mixin
+        "zone.rong.mixinbooter.",      // MixinBooter
+        "java.",                       // Java stdlib
+        "javax.",                      // Java extensions
+        "sun.",                        // JDK internals
+        "jdk.",                        // JDK internals
+        "net.minecraft.launchwrapper.",// LaunchWrapper
+        "org.apache.",                 // Log4j, Commons
+        "com.google.",                 // Guava, Gson
+        "io.netty.",                   // Netty
+        "it.unimi.dsi.",               // FastUtil
+        "org.joml.",                   // JOML
+        "org.taumc.celeritas.",        // Celeritas
+        "org.embeddedt.embeddium.",    // Embeddium (Celeritas core)
+        "me.cortex.nvidium.",          // Nvidium
+        "net.irisshaders.",            // Iris
+    };
+
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
         if (basicClass == null) return null;
 
         // Skip classes that must never be transformed
-        if (transformedName.startsWith("com.github.gl46core.")       // our own mod
-            || transformedName.startsWith("org.lwjgl.")              // LWJGL itself
-            || transformedName.startsWith("org.objectweb.asm.")      // ASM library
-            || transformedName.startsWith("org.spongepowered.asm.")  // Mixin
-            || transformedName.startsWith("zone.rong.mixinbooter.")  // MixinBooter
-            || transformedName.startsWith("java.")                   // Java stdlib
-            || transformedName.startsWith("javax.")                  // Java extensions
-            || transformedName.startsWith("sun.")                    // JDK internals
-            || transformedName.startsWith("jdk.")                    // JDK internals
-            || transformedName.startsWith("net.minecraft.launchwrapper.") // LaunchWrapper
-            || transformedName.startsWith("org.apache.")             // Log4j, Commons
-            || transformedName.startsWith("com.google.")             // Guava, Gson
-            || transformedName.startsWith("io.netty.")               // Netty
-            || transformedName.startsWith("it.unimi.dsi.")           // FastUtil
-            || transformedName.startsWith("org.joml.")               // JOML
-        ) {
-            return basicClass;
+        for (String prefix : EXCLUDED_PREFIXES) {
+            if (transformedName.startsWith(prefix)) return basicClass;
         }
 
         try {
@@ -63,196 +151,22 @@ public class LegacyGLTransformer implements IClassTransformer {
                 return new MethodVisitor(Opcodes.ASM9, mv) {
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String mname2, String desc2, boolean itf) {
-                        // Redirect GL11.glMultMatrix(FloatBuffer)
-                        if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glMultMatrix".equals(mname2)
-                                && "(Ljava/nio/FloatBuffer;)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glMultMatrix", "(Ljava/nio/FloatBuffer;)V", false);
-                            modified[0] = true;
+                        if (opcode == Opcodes.INVOKESTATIC) {
+                            // Try exact match first (owner + method + descriptor)
+                            Redirect redirect = REDIRECT_TABLE.get(new CallKey(owner, mname2, desc2));
+                            // Fall back to wildcard descriptor match (for GLU methods)
+                            if (redirect == null) {
+                                redirect = REDIRECT_TABLE.get(new CallKey(owner, mname2, null));
+                            }
+                            if (redirect != null) {
+                                String targetDesc = redirect.targetDesc() != null ? redirect.targetDesc() : desc2;
+                                super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
+                                        redirect.targetMethod(), targetDesc, false);
+                                modified[0] = true;
+                                return;
+                            }
                         }
-                        // Redirect GLU.gluPerspective
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/util/glu/GLU".equals(owner)
-                                && "gluPerspective".equals(mname2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "gluPerspective", desc2, false);
-                            modified[0] = true;
-                        }
-                        // Redirect Project.gluPerspective (called by GLU or directly)
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/util/glu/Project".equals(owner)
-                                && "gluPerspective".equals(mname2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "gluPerspective", desc2, false);
-                            modified[0] = true;
-                        }
-                        // Redirect GLU.gluLookAt / Project.gluLookAt
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && ("org/lwjgl/util/glu/GLU".equals(owner) || "org/lwjgl/util/glu/Project".equals(owner))
-                                && "gluLookAt".equals(mname2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "gluLookAt", desc2, false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glLoadIdentity
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glLoadIdentity".equals(mname2)
-                                && "()V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glLoadIdentity", "()V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glMatrixMode
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glMatrixMode".equals(mname2)
-                                && "(I)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glMatrixMode", "(I)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glOrtho
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glOrtho".equals(mname2)
-                                && "(DDDDDD)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glOrtho", "(DDDDDD)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glRotatef
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glRotatef".equals(mname2)
-                                && "(FFFF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glRotatef", "(FFFF)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glScalef
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glScalef".equals(mname2)
-                                && "(FFF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glScalef", "(FFF)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glTranslatef
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glTranslatef".equals(mname2)
-                                && "(FFF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glTranslatef", "(FFF)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glTranslated
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glTranslated".equals(mname2)
-                                && "(DDD)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glTranslated", "(DDD)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glColor4f
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glColor4f".equals(mname2)
-                                && "(FFFF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glColor4f", "(FFFF)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glPushMatrix
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glPushMatrix".equals(mname2)
-                                && "()V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glPushMatrix", "()V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glPopMatrix
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glPopMatrix".equals(mname2)
-                                && "()V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glPopMatrix", "()V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glColor3f
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glColor3f".equals(mname2)
-                                && "(FFF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glColor3f", "(FFF)V", false);
-                            modified[0] = true;
-                        }
-                        // ── Immediate mode redirects ──
-                        // Redirect GL11.glBegin
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glBegin".equals(mname2)
-                                && "(I)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glBegin", "(I)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glEnd
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glEnd".equals(mname2)
-                                && "()V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glEnd", "()V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glVertex3f
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glVertex3f".equals(mname2)
-                                && "(FFF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glVertex3f", "(FFF)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glVertex2f
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glVertex2f".equals(mname2)
-                                && "(FF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glVertex2f", "(FF)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glTexCoord2f
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glTexCoord2f".equals(mname2)
-                                && "(FF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glTexCoord2f", "(FF)V", false);
-                            modified[0] = true;
-                        }
-                        // Redirect GL11.glNormal3f
-                        else if (opcode == Opcodes.INVOKESTATIC
-                                && "org/lwjgl/opengl/GL11".equals(owner)
-                                && "glNormal3f".equals(mname2)
-                                && "(FFF)V".equals(desc2)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, REDIRECTS,
-                                    "glNormal3f", "(FFF)V", false);
-                            modified[0] = true;
-                        }
-                        else {
-                            super.visitMethodInsn(opcode, owner, mname2, desc2, itf);
-                        }
+                        super.visitMethodInsn(opcode, owner, mname2, desc2, itf);
                     }
                 };
             }

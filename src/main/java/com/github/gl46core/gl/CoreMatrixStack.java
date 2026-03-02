@@ -177,18 +177,10 @@ public final class CoreMatrixStack {
      */
     public void getFloat(int pname, FloatBuffer params) {
         switch (pname) {
-            case 0x0BA6: // GL_MODELVIEW_MATRIX
-                modelViewStack.get(params);
-                break;
-            case 0x0BA7: // GL_PROJECTION_MATRIX
-                projectionStack.get(params);
-                break;
-            case 0x0BA8: // GL_TEXTURE_MATRIX
-                textureStack.get(params);
-                break;
-            default:
-                // Not a matrix query — fall through (caller handles)
-                break;
+            case 0x0BA6 -> modelViewStack.get(params);  // GL_MODELVIEW_MATRIX
+            case 0x0BA7 -> projectionStack.get(params); // GL_PROJECTION_MATRIX
+            case 0x0BA8 -> textureStack.get(params);    // GL_TEXTURE_MATRIX
+            default -> {} // Not a matrix query — fall through (caller handles)
         }
     }
 
@@ -237,25 +229,18 @@ public final class CoreMatrixStack {
     }
 
     private Matrix4fStack activeStack() {
-        switch (currentMode) {
-            case GL_PROJECTION:
-                return projectionStack;
-            case GL_TEXTURE:
-                return textureStack;
-            case GL_MODELVIEW:
-            default:
-                return modelViewStack;
-        }
+        return switch (currentMode) {
+            case GL_PROJECTION -> projectionStack;
+            case GL_TEXTURE -> textureStack;
+            default -> modelViewStack;
+        };
     }
 
     private void markDirty() {
         switch (currentMode) {
-            case GL_PROJECTION:
-                projectionDirty = true;
-                break;
-            case GL_MODELVIEW:
-                modelViewDirty = true;
-                break;
+            case GL_PROJECTION -> projectionDirty = true;
+            case GL_MODELVIEW -> modelViewDirty = true;
+            default -> {}
         }
     }
 }

@@ -13,6 +13,7 @@ import org.lwjgl.opengl.GL20;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 
 import java.nio.FloatBuffer;
 
@@ -27,6 +28,54 @@ import java.nio.FloatBuffer;
 public abstract class MixinGlStateManager {
 
     @Shadow private static int activeTextureUnit;
+
+    // GlStateManager.FogState is package-private, so we can't @Shadow it directly.
+    // Cache reflection handles for the fog state fields so Celeritas (and other mods)
+    // that read GlStateManager.fogState.* directly get correct values.
+    @Unique
+    private static Object gl46core$fogState;
+    @Unique
+    private static java.lang.reflect.Field gl46core$fogEnd;
+    @Unique
+    private static java.lang.reflect.Field gl46core$fogStart;
+    @Unique
+    private static java.lang.reflect.Field gl46core$fogDensity;
+    @Unique
+    private static java.lang.reflect.Field gl46core$fogMode;
+    @Unique
+    private static java.lang.reflect.Field gl46core$fogBoolState;
+    @Unique
+    private static java.lang.reflect.Field gl46core$boolCurrentState;
+
+    @Unique
+    private static java.lang.reflect.Field gl46core$findField(Class<?> clazz, String mcpName, String srgName) throws NoSuchFieldException {
+        try {
+            java.lang.reflect.Field f = clazz.getDeclaredField(mcpName);
+            f.setAccessible(true);
+            return f;
+        } catch (NoSuchFieldException e) {
+            java.lang.reflect.Field f = clazz.getDeclaredField(srgName);
+            f.setAccessible(true);
+            return f;
+        }
+    }
+
+    static {
+        try {
+            java.lang.reflect.Field fsField = gl46core$findField(GlStateManager.class, "fogState", "field_179155_g");
+            gl46core$fogState = fsField.get(null);
+            Class<?> fogStateClass = gl46core$fogState.getClass();
+            gl46core$fogEnd = gl46core$findField(fogStateClass, "end", "field_179046_e");
+            gl46core$fogStart = gl46core$findField(fogStateClass, "start", "field_179045_d");
+            gl46core$fogDensity = gl46core$findField(fogStateClass, "density", "field_179048_c");
+            gl46core$fogMode = gl46core$findField(fogStateClass, "mode", "field_179047_b");
+            gl46core$fogBoolState = gl46core$findField(fogStateClass, "fog", "field_179049_a");
+            Object boolState = gl46core$fogBoolState.get(gl46core$fogState);
+            gl46core$boolCurrentState = gl46core$findField(boolState.getClass(), "currentState", "field_179201_b");
+        } catch (Exception e) {
+            throw new RuntimeException("gl46core: Failed to init fogState reflection", e);
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // Matrix stack operations → CoreMatrixStack
@@ -225,6 +274,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void enableFog() {
+        try { gl46core$boolCurrentState.setBoolean(gl46core$fogBoolState.get(gl46core$fogState), true); } catch (Exception ignored) {}
         CoreStateTracker.INSTANCE.enableFog();
     }
 
@@ -234,6 +284,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void disableFog() {
+        try { gl46core$boolCurrentState.setBoolean(gl46core$fogBoolState.get(gl46core$fogState), false); } catch (Exception ignored) {}
         CoreStateTracker.INSTANCE.disableFog();
     }
 
@@ -243,6 +294,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void setFog(int mode) {
+        try { gl46core$fogMode.setInt(gl46core$fogState, mode); } catch (Exception ignored) {}
         CoreStateTracker.INSTANCE.setFogMode(mode);
     }
 
@@ -252,6 +304,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void setFogDensity(float density) {
+        try { gl46core$fogDensity.setFloat(gl46core$fogState, density); } catch (Exception ignored) {}
         CoreStateTracker.INSTANCE.setFogDensity(density);
     }
 
@@ -261,6 +314,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void setFogStart(float start) {
+        try { gl46core$fogStart.setFloat(gl46core$fogState, start); } catch (Exception ignored) {}
         CoreStateTracker.INSTANCE.setFogStart(start);
     }
 
@@ -270,6 +324,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void setFogEnd(float end) {
+        try { gl46core$fogEnd.setFloat(gl46core$fogState, end); } catch (Exception ignored) {}
         CoreStateTracker.INSTANCE.setFogEnd(end);
     }
 

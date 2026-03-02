@@ -12,7 +12,8 @@
     "MixinOpenGlHelper",
     "MixinSplashProgress",
     "MixinFMLClientHandler",
-    "MixinCloudRenderer"
+    "MixinCloudRenderer",
+    "MixinActiveRenderInfo"
   ],
   "mixins": [],
   "server": [],

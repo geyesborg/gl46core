@@ -17,10 +17,10 @@ import org.spongepowered.asm.mixin.Shadow;
  * GL_NORMALIZE, GL_RESCALE_NORMAL, GL_TEXTURE_2D, GL_TEXTURE_GEN_*) is
  * tracked in CoreStateTracker and never sent to GL.
  */
-@Mixin(targets = "net.minecraft.client.renderer.GlStateManager$BooleanState", remap = false)
+@Mixin(targets = "net.minecraft.client.renderer.GlStateManager$BooleanState")
 public abstract class MixinBooleanState {
 
-    @Shadow private int capability;
+    @Shadow private int field_179202_a; // capability
 
     // Software cache of current GL state — prevents redundant glEnable/glDisable
     // which trigger NVIDIA driver shader recompilation
@@ -28,7 +28,7 @@ public abstract class MixinBooleanState {
     private boolean cacheInitialized = false;
 
     private boolean isCoreCapability() {
-        switch (capability) {
+        switch (field_179202_a) {
             case GL11.GL_DEPTH_TEST:   // 0x0B71
             case GL11.GL_BLEND:        // 0x0BE2
             case GL11.GL_CULL_FACE:    // 0x0B44
@@ -48,10 +48,10 @@ public abstract class MixinBooleanState {
      * @reason Filter legacy caps + cache state to prevent NVIDIA shader recompilation.
      */
     @Overwrite
-    public void setEnabled() {
+    public void func_179200_b() { // setEnabled
         if (isCoreCapability()) {
             if (!cacheInitialized || !cachedState) {
-                GL11.glEnable(capability);
+                GL11.glEnable(field_179202_a);
                 cachedState = true;
                 cacheInitialized = true;
             }
@@ -63,10 +63,10 @@ public abstract class MixinBooleanState {
      * @reason Filter legacy caps + cache state to prevent NVIDIA shader recompilation.
      */
     @Overwrite
-    public void setDisabled() {
+    public void func_179198_a() { // setDisabled
         if (isCoreCapability()) {
             if (!cacheInitialized || cachedState) {
-                GL11.glDisable(capability);
+                GL11.glDisable(field_179202_a);
                 cachedState = false;
                 cacheInitialized = true;
             }
@@ -78,11 +78,11 @@ public abstract class MixinBooleanState {
      * @reason Filter legacy caps + cache state to prevent NVIDIA shader recompilation.
      */
     @Overwrite
-    public void setState(boolean enabled) {
+    public void func_179199_a(boolean enabled) { // setState
         if (isCoreCapability()) {
             if (!cacheInitialized || cachedState != enabled) {
-                if (enabled) GL11.glEnable(capability);
-                else GL11.glDisable(capability);
+                if (enabled) GL11.glEnable(field_179202_a);
+                else GL11.glDisable(field_179202_a);
                 cachedState = enabled;
                 cacheInitialized = true;
             }

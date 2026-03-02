@@ -66,14 +66,12 @@ public final class CoreDrawHandler {
             VertexFormatElement elem = elements.get(i);
             int offset = format.getOffset(i);
             switch (elem.getUsage()) {
-                case POSITION:
-                    posOffset = offset;
-                    break;
-                case COLOR:
+                case POSITION -> posOffset = offset;
+                case COLOR -> {
                     hasColor = true;
                     colorOffset = offset;
-                    break;
-                case UV:
+                }
+                case UV -> {
                     if (elem.getIndex() == 0) {
                         hasTexCoord = true;
                         texCoordOffset = offset;
@@ -81,15 +79,12 @@ public final class CoreDrawHandler {
                         hasLightMap = true;
                         lightMapOffset = offset;
                     }
-                    break;
-                case NORMAL:
+                }
+                case NORMAL -> {
                     hasNormal = true;
                     normalOffset = offset;
-                    break;
-                case PADDING:
-                case GENERIC:
-                default:
-                    break;
+                }
+                default -> {}
             }
         }
 
