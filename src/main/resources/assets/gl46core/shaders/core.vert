@@ -19,28 +19,25 @@ layout(std140, binding = 0) uniform PerFrame {
 };
 
 // Per-draw UBO — state that changes between draw calls
+// Format flags (hasColor/hasTexCoord/hasNormal) are handled via default vertex
+// attributes (glVertexAttrib*) instead of UBO fields — avoids shader branching.
 layout(std140, binding = 1) uniform PerDraw {
-    vec4 uColor;                // offset 0
-    vec4 uFogColor;             // offset 16
-    float uAlphaRef;            // offset 32
-    float uFogDensity;          // offset 36
-    float uFogStart;            // offset 40
-    float uFogEnd;              // offset 44
-    vec2 uGlobalLightMapCoord;  // offset 48
-    int uAlphaFunc;             // offset 56
-    int uFogMode;               // offset 60
-    int uHasColor;              // offset 64
-    int uHasTexCoord;           // offset 68
-    int uHasNormal;             // offset 72
-    int uLightMapEnabled;       // offset 76
-    int uTextureEnabled;        // offset 80
-    int uAlphaTestEnabled;      // offset 84
-    int uFogEnabled;            // offset 88
-    int uLightingEnabled;       // offset 92
-    int uUseLightMapTexture;    // offset 96
-    int _pad0;                  // offset 100 (padding to 16-byte alignment)
-    int _pad1;                  // offset 104
-    int _pad2;                  // offset 108
+    vec4 uFogColor;             // offset 0
+    float uAlphaRef;            // offset 16
+    float uFogDensity;          // offset 20
+    float uFogStart;            // offset 24
+    float uFogEnd;              // offset 28
+    vec2 uGlobalLightMapCoord;  // offset 32
+    int uAlphaFunc;             // offset 40
+    int uFogMode;               // offset 44
+    int uLightMapEnabled;       // offset 48
+    int uTextureEnabled;        // offset 52
+    int uAlphaTestEnabled;      // offset 56
+    int uFogEnabled;            // offset 60
+    int uLightingEnabled;       // offset 64
+    int uUseLightMapTexture;    // offset 68
+    int _pad0;                  // offset 72
+    int _pad1;                  // offset 76
 };
 
 out vec4 vColor;
@@ -52,28 +49,28 @@ out float vFogDist;
 void main() {
     gl_Position = uModelViewProjection * vec4(aPosition, 1.0);
 
-    // Color: use vertex color if present, otherwise use glColor4f uniform
-    vec4 baseColor;
-    if (uHasColor != 0) {
-        baseColor = aColor;
-    } else {
-        baseColor = uColor;
-    }
+    // Color always comes from the attribute. When vertex color is not in the
+    // buffer, the draw handler sets glVertexAttrib4f to the current glColor4f.
+    vec4 baseColor = aColor;
 
-    // Apply fixed-function lighting only when no lightmap is present.
-    // In-world entities use lightmap for brightness; GUI/inventory entities need directional lights.
-    if (uLightingEnabled != 0 && uHasNormal != 0 && uLightMapEnabled == 0) {
-        vec3 eyeNormal = normalize(mat3(uModelView) * aNormal);
+    // Normal: when attribute is disabled, default is (0,0,0). Use dot product
+    // to detect real normals without a UBO flag.
+    vec3 eyeNormal = mat3(uModelView) * aNormal;
+    bool hasRealNormal = dot(aNormal, aNormal) > 0.0;
+    vNormal = hasRealNormal ? eyeNormal : vec3(0.0, 0.0, 1.0);
+
+    // Apply fixed-function lighting only when normals are present and
+    // directional lighting is enabled (skip for lightmapped geometry).
+    if (hasRealNormal && uLightingEnabled != 0 && uLightMapEnabled == 0) {
+        vec3 normEyeNormal = normalize(eyeNormal);
         vec3 lightColor = uLightModelAmbient.rgb;
 
-        // Light 0
         vec3 lightDir0 = normalize(uLight0Position.xyz);
-        float NdotL0 = max(0.0, dot(eyeNormal, lightDir0));
+        float NdotL0 = max(0.0, dot(normEyeNormal, lightDir0));
         lightColor += uLight0Diffuse.rgb * NdotL0;
 
-        // Light 1
         vec3 lightDir1 = normalize(uLight1Position.xyz);
-        float NdotL1 = max(0.0, dot(eyeNormal, lightDir1));
+        float NdotL1 = max(0.0, dot(normEyeNormal, lightDir1));
         lightColor += uLight1Diffuse.rgb * NdotL1;
 
         baseColor.rgb *= clamp(lightColor, 0.0, 1.0);
@@ -81,18 +78,11 @@ void main() {
 
     vColor = baseColor;
 
-    // Texcoord
-    vTexCoord = (uHasTexCoord != 0) ? aTexCoord : vec2(0.0);
+    // TexCoord always from attribute. Default is (0,0) when not in buffer.
+    vTexCoord = aTexCoord;
 
-    // Lightmap
+    // Lightmap always passed through; fragment shader checks uLightMapEnabled.
     vLightMap = aLightMap;
-
-    // Normal
-    if (uHasNormal != 0) {
-        vNormal = mat3(uModelView) * aNormal;
-    } else {
-        vNormal = vec3(0.0, 0.0, 1.0);
-    }
 
     // Fog distance (eye-space Z)
     vec4 eyePos = uModelView * vec4(aPosition, 1.0);

@@ -1,5 +1,7 @@
 package com.github.gl46core.gl;
 
+import com.github.gl46core.core.DeprecatedUsageTracker;
+import com.github.gl46core.core.GL46CoreConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.FileResourcePack;
 import net.minecraft.client.resources.FolderResourcePack;
@@ -26,6 +28,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -229,7 +232,8 @@ public final class CoreSplashRenderer {
     public static void finish() {
         if (!enabled || !initialized) return;
         try {
-            // Cleanup splash GL objects
+            showDeprecationWarningIfNeeded();
+
             GL11C.glDeleteTextures(fontTexName);
             GL11C.glDeleteTextures(logoTexName);
             GL11C.glDeleteTextures(forgeTexName);
@@ -240,6 +244,130 @@ public final class CoreSplashRenderer {
         } catch (Exception e) {
             FMLLog.log.error("Error finishing CoreSplashRenderer:", e);
         }
+    }
+
+    /**
+     * If deprecated GL usage was detected during class loading and the config
+     * says to pause, render a warning screen and wait for Enter to continue.
+     */
+    private static void showDeprecationWarningIfNeeded() {
+        if (!DeprecatedUsageTracker.hasAnyUsage()) return;
+
+        List<String> lines = DeprecatedUsageTracker.buildSummaryLines();
+
+        if (GL46CoreConfig.warnDeprecatedGL()) {
+            FMLLog.log.warn("══════════════════════════════════════════════════════════════");
+            FMLLog.log.warn("GL46 Core — Deprecated OpenGL usage detected:");
+            for (String line : lines) {
+                FMLLog.log.warn("  {}", line);
+            }
+            FMLLog.log.warn("These features have no core-profile equivalent and are no-ops.");
+            FMLLog.log.warn("Affected mods may have missing visuals. Ask mod authors to update.");
+            FMLLog.log.warn("══════════════════════════════════════════════════════════════");
+        }
+
+        if (!GL46CoreConfig.pauseOnDeprecatedGL()) return;
+        if (mainWindow == 0) return;
+
+        GLFW.glfwSetInputMode(mainWindow, GLFW.GLFW_STICKY_KEYS, GLFW.GLFW_TRUE);
+
+        boolean waiting = true;
+        while (waiting && !GLFW.glfwWindowShouldClose(mainWindow)) {
+            renderWarningFrame(lines);
+            GLFW.glfwSwapBuffers(mainWindow);
+            GLFW.glfwPollEvents();
+
+            if (GLFW.glfwGetKey(mainWindow, GLFW.GLFW_KEY_ENTER) == GLFW.GLFW_PRESS
+                    || GLFW.glfwGetKey(mainWindow, GLFW.GLFW_KEY_KP_ENTER) == GLFW.GLFW_PRESS) {
+                waiting = false;
+            }
+
+            try { Thread.sleep(16); } catch (InterruptedException ignored) {}
+        }
+    }
+
+    private static void renderWarningFrame(List<String> summaryLines) {
+        int w, h;
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer pw = stack.mallocInt(1);
+            IntBuffer ph = stack.mallocInt(1);
+            GLFW.glfwGetFramebufferSize(mainWindow, pw, ph);
+            w = pw.get(0);
+            h = ph.get(0);
+        }
+        GL11C.glViewport(0, 0, w, h);
+
+        GL11C.glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
+        GL11C.glClear(GL11C.GL_COLOR_BUFFER_BIT);
+        GL11C.glDisable(GL11C.GL_DEPTH_TEST);
+        GL11C.glEnable(GL11C.GL_BLEND);
+        GL11C.glBlendFunc(GL11C.GL_SRC_ALPHA, GL11C.GL_ONE_MINUS_SRC_ALPHA);
+
+        float left = 320 - w / 2f;
+        float right = 320 + w / 2f;
+        float bottom = 240 + h / 2f;
+        float top = 240 - h / 2f;
+        org.joml.Matrix4f ortho = new org.joml.Matrix4f().ortho(left, right, bottom, top, -1, 1);
+
+        GL20.glUseProgram(splashProgram);
+        ortho.get(matBuf);
+        GL20.glUniformMatrix4fv(uMVP, false, matBuf);
+        GL20.glUniform1i(uTexture, 0);
+        GL20.glUniform4f(uColor, 1, 1, 1, 1);
+
+        float scale = 2.0f;
+        float lineH = charCellH * scale + 4;
+
+        float panelLeft = left + 30;
+        float panelTop = top + 30;
+
+        // Title bar
+        setDrawColor(0xE0A020);
+        GL20.glUniform1i(uTextureEnabled, 0);
+        drawQuad(panelLeft - 10, panelTop - 10, right - 20, panelTop + lineH + 6, 0, 0, 0, 0);
+
+        setDrawColor(0x1E1E24);
+        drawQuad(panelLeft - 8, panelTop - 8, right - 22, panelTop + lineH + 4, 0, 0, 0, 0);
+
+        setDrawColor(0xFFCC33);
+        drawString(panelLeft, panelTop, "WARNING: Deprecated OpenGL Usage Detected", scale);
+
+        float y = panelTop + lineH + 20;
+
+        setDrawColor(0xDDDDDD);
+        drawString(panelLeft, y, "The following mods use legacy GL features that have", scale);
+        y += lineH;
+        drawString(panelLeft, y, "no core-profile replacement. They will still load,", scale);
+        y += lineH;
+        drawString(panelLeft, y, "but some visuals may be missing or broken.", scale);
+        y += lineH + 10;
+
+        // Feature list
+        setDrawColor(0x555566);
+        GL20.glUniform1i(uTextureEnabled, 0);
+        float listBottom = y + (summaryLines.size() + 1) * lineH + 8;
+        drawQuad(panelLeft - 5, y - 5, right - 25, listBottom, 0, 0, 0, 0);
+
+        for (String line : summaryLines) {
+            boolean isHeader = !line.startsWith("    ");
+            setDrawColor(isHeader ? 0xFF8844 : 0xBBBBBB);
+            drawString(panelLeft + (isHeader ? 0 : 10), y, line, scale);
+            y += lineH;
+        }
+
+        y = listBottom + 20;
+
+        setDrawColor(0xAAAAAA);
+        drawString(panelLeft, y, "To disable this warning, set pauseOnDeprecatedGL=false", scale);
+        y += lineH;
+        drawString(panelLeft, y, "in config/gl46core.cfg", scale);
+        y += lineH + 20;
+
+        // Pulsing "Press ENTER" prompt
+        float pulse = (float) (0.6 + 0.4 * Math.sin(System.currentTimeMillis() / 400.0));
+        int g = (int) (255 * pulse);
+        setDrawColor((g << 16) | (0xFF << 8) | g);
+        drawString(panelLeft, y, ">>> Press ENTER to continue loading <<<", scale);
     }
 
     // ═════════════════════════════════════════════════════════════════

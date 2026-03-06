@@ -8,8 +8,6 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL45;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.IntBuffer;
 import java.util.List;
 
 /**
@@ -27,8 +25,6 @@ public final class CoreDrawHandler {
 
     private static int vao = 0;
     private static int vbo = 0;
-    private static int ebo = 0;
-    private static int cachedMaxQuads = 0;
     private static int vboCapacity = 0;
     private static VertexFormat lastFormat = null;
 
@@ -94,10 +90,9 @@ public final class CoreDrawHandler {
             GL45.glCreateVertexArrays(vaos);
             vao = vaos[0];
 
-            int[] bufs = new int[2];
+            int[] bufs = new int[1];
             GL45.glCreateBuffers(bufs);
             vbo = bufs[0];
-            ebo = bufs[1];
         }
 
         GL30.glBindVertexArray(vao);
@@ -182,28 +177,8 @@ public final class CoreDrawHandler {
             int quadCount = vertexCount / 4;
             int indexCount = quadCount * 6;
 
-            // Grow EBO if needed
-            if (quadCount > cachedMaxQuads) {
-                cachedMaxQuads = Math.max(quadCount, 256);
-                int maxIndexCount = cachedMaxQuads * 6;
-                IntBuffer indices = ByteBuffer.allocateDirect(maxIndexCount * 4)
-                        .order(ByteOrder.nativeOrder()).asIntBuffer();
-                for (int q = 0; q < cachedMaxQuads; q++) {
-                    int base = q * 4;
-                    indices.put(base);     indices.put(base + 1); indices.put(base + 2);
-                    indices.put(base);     indices.put(base + 2); indices.put(base + 3);
-                }
-                indices.flip();
-
-                // Recreate EBO with DSA immutable storage
-                int[] bufs = new int[1];
-                GL45.glCreateBuffers(bufs);
-                int newEbo = bufs[0];
-                GL45.glNamedBufferStorage(newEbo, indices, 0); // no dynamic flag needed — static data
-                GL45.glVertexArrayElementBuffer(vao, newEbo);
-                if (ebo != 0) GL45.glDeleteBuffers(ebo);
-                ebo = newEbo;
-            }
+            int ebo = QuadIndexBuffer.ensure(quadCount);
+            GL45.glVertexArrayElementBuffer(vao, ebo);
 
             GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
         } else {

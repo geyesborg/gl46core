@@ -84,11 +84,11 @@ public final class ImmediateModeEmulator {
         buffer.putFloat(y);
         buffer.putFloat(z);
 
-        // Color as RGBA ubyte (4 bytes)
-        buffer.put((byte) (colR * 255));
-        buffer.put((byte) (colG * 255));
-        buffer.put((byte) (colB * 255));
-        buffer.put((byte) (colA * 255));
+        // Color as RGBA ubyte (4 bytes) — clamp to [0,255] to prevent wrap-around
+        buffer.put((byte) Math.min(Math.max((int) (colR * 255.0f + 0.5f), 0), 255));
+        buffer.put((byte) Math.min(Math.max((int) (colG * 255.0f + 0.5f), 0), 255));
+        buffer.put((byte) Math.min(Math.max((int) (colB * 255.0f + 0.5f), 0), 255));
+        buffer.put((byte) Math.min(Math.max((int) (colA * 255.0f + 0.5f), 0), 255));
 
         // Texcoord (8 bytes)
         buffer.putFloat(texU);

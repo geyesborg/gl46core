@@ -34,6 +34,12 @@ public final class CoreStateTracker {
         int shadeModel;
     }
 
+    // Generation counter — increments on every state mutation.
+    // CoreShaderProgram compares this to skip per-draw dirty checks.
+    private int generation = 0;
+
+    public int getGeneration() { return generation; }
+
     private CoreStateTracker() {
         attribStack = new AttribSnapshot[ATTRIB_STACK_DEPTH];
         for (int i = 0; i < ATTRIB_STACK_DEPTH; i++) attribStack[i] = new AttribSnapshot();
@@ -84,6 +90,7 @@ public final class CoreStateTracker {
         rescaleNormalEnabled = s.rescaleNormalEnabled;
         colorMaterialEnabled = s.colorMaterialEnabled;
         shadeModel = s.shadeModel;
+        generation++;
     }
 
     // ── Alpha test ──────────────────────────────────────────────────────
@@ -128,19 +135,19 @@ public final class CoreStateTracker {
     // ── Shade model ─────────────────────────────────────────────────────
     private int shadeModel = 0x1D01; // GL_SMOOTH
 
-    public void enableAlphaTest() { alphaTestEnabled = true; }
-    public void disableAlphaTest() { alphaTestEnabled = false; }
-    public void alphaFunc(int func, float ref) { alphaFunc = func; alphaRef = ref; }
+    public void enableAlphaTest() { alphaTestEnabled = true; generation++; }
+    public void disableAlphaTest() { alphaTestEnabled = false; generation++; }
+    public void alphaFunc(int func, float ref) { alphaFunc = func; alphaRef = ref; generation++; }
     public boolean isAlphaTestEnabled() { return alphaTestEnabled; }
     public int getAlphaFunc() { return alphaFunc; }
     public float getAlphaRef() { return alphaRef; }
 
     // ── Lighting ────────────────────────────────────────────────────────
 
-    public void enableLighting() { lightingEnabled = true; }
-    public void disableLighting() { lightingEnabled = false; }
-    public void enableLight(int light) { if (light >= 0 && light < 8) lightEnabled[light] = true; }
-    public void disableLight(int light) { if (light >= 0 && light < 8) lightEnabled[light] = false; }
+    public void enableLighting() { lightingEnabled = true; generation++; }
+    public void disableLighting() { lightingEnabled = false; generation++; }
+    public void enableLight(int light) { if (light >= 0 && light < 8) { lightEnabled[light] = true; generation++; } }
+    public void disableLight(int light) { if (light >= 0 && light < 8) { lightEnabled[light] = false; generation++; } }
     public boolean isLightingEnabled() { return lightingEnabled; }
     public boolean isLightEnabled(int light) { return light >= 0 && light < 8 && lightEnabled[light]; }
 
@@ -148,25 +155,28 @@ public final class CoreStateTracker {
         if (light >= 0 && light < 2) {
             lightPosition[light][0] = x; lightPosition[light][1] = y;
             lightPosition[light][2] = z; lightPosition[light][3] = w;
+            generation++;
         }
     }
     public void setLightDiffuse(int light, float r, float g, float b, float a) {
         if (light >= 0 && light < 2) {
             lightDiffuse[light][0] = r; lightDiffuse[light][1] = g;
             lightDiffuse[light][2] = b; lightDiffuse[light][3] = a;
+            generation++;
         }
     }
     public void setLightAmbient(int light, float r, float g, float b, float a) {
         if (light >= 0 && light < 2) {
             lightAmbient[light][0] = r; lightAmbient[light][1] = g;
             lightAmbient[light][2] = b; lightAmbient[light][3] = a;
+            generation++;
         }
     }
     public float[] getLightPosition(int light) { return light >= 0 && light < 2 ? lightPosition[light] : new float[4]; }
     public float[] getLightDiffuse(int light) { return light >= 0 && light < 2 ? lightDiffuse[light] : new float[4]; }
 
     public void setLightModelAmbient(float r, float g, float b, float a) {
-        ambientR = r; ambientG = g; ambientB = b; ambientA = a;
+        ambientR = r; ambientG = g; ambientB = b; ambientA = a; generation++;
     }
     public float getLightModelAmbientR() { return ambientR; }
     public float getLightModelAmbientG() { return ambientG; }
@@ -174,13 +184,13 @@ public final class CoreStateTracker {
 
     // ── Fog ─────────────────────────────────────────────────────────────
 
-    public void enableFog() { fogEnabled = true; }
-    public void disableFog() { fogEnabled = false; }
-    public void setFogMode(int mode) { fogMode = mode; }
-    public void setFogDensity(float density) { fogDensity = density; }
-    public void setFogStart(float start) { fogStart = start; }
-    public void setFogEnd(float end) { fogEnd = end; }
-    public void setFogColor(float r, float g, float b, float a) { fogR = r; fogG = g; fogB = b; fogA = a; }
+    public void enableFog() { fogEnabled = true; generation++; }
+    public void disableFog() { fogEnabled = false; generation++; }
+    public void setFogMode(int mode) { fogMode = mode; generation++; }
+    public void setFogDensity(float density) { fogDensity = density; generation++; }
+    public void setFogStart(float start) { fogStart = start; generation++; }
+    public void setFogEnd(float end) { fogEnd = end; generation++; }
+    public void setFogColor(float r, float g, float b, float a) { fogR = r; fogG = g; fogB = b; fogA = a; generation++; }
     public boolean isFogEnabled() { return fogEnabled; }
     public int getFogMode() { return fogMode; }
     public float getFogDensity() { return fogDensity; }
@@ -189,8 +199,8 @@ public final class CoreStateTracker {
 
     // ── Color ───────────────────────────────────────────────────────────
 
-    public void color(float r, float g, float b, float a) { colorR = r; colorG = g; colorB = b; colorA = a; }
-    public void resetColor() { colorR = -1.0f; colorG = -1.0f; colorB = -1.0f; colorA = -1.0f; }
+    public void color(float r, float g, float b, float a) { colorR = r; colorG = g; colorB = b; colorA = a; generation++; }
+    public void resetColor() { colorR = -1.0f; colorG = -1.0f; colorB = -1.0f; colorA = -1.0f; generation++; }
     public float getColorR() { return colorR; }
     public float getColorG() { return colorG; }
     public float getColorB() { return colorB; }
@@ -198,34 +208,40 @@ public final class CoreStateTracker {
 
     // ── Texture 2D ──────────────────────────────────────────────────────
 
-    public void enableTexture2D(int unit) { if (unit >= 0 && unit < 8) texture2DEnabled[unit] = true; }
-    public void disableTexture2D(int unit) { if (unit >= 0 && unit < 8) texture2DEnabled[unit] = false; }
+    public void enableTexture2D(int unit) { if (unit >= 0 && unit < 8) { texture2DEnabled[unit] = true; generation++; } }
+    public void disableTexture2D(int unit) { if (unit >= 0 && unit < 8) { texture2DEnabled[unit] = false; generation++; } }
     public boolean isTexture2DEnabled(int unit) { return unit >= 0 && unit < 8 && texture2DEnabled[unit]; }
 
     // ── Normalize ───────────────────────────────────────────────────────
 
-    public void enableNormalize() { normalizeEnabled = true; }
-    public void disableNormalize() { normalizeEnabled = false; }
-    public void enableRescaleNormal() { rescaleNormalEnabled = true; }
-    public void disableRescaleNormal() { rescaleNormalEnabled = false; }
+    public void enableNormalize() { normalizeEnabled = true; generation++; }
+    public void disableNormalize() { normalizeEnabled = false; generation++; }
+    public void enableRescaleNormal() { rescaleNormalEnabled = true; generation++; }
+    public void disableRescaleNormal() { rescaleNormalEnabled = false; generation++; }
 
     // ── Color material ──────────────────────────────────────────────────
 
-    public void enableColorMaterial() { colorMaterialEnabled = true; }
-    public void disableColorMaterial() { colorMaterialEnabled = false; }
+    public void enableColorMaterial() { colorMaterialEnabled = true; generation++; }
+    public void disableColorMaterial() { colorMaterialEnabled = false; generation++; }
 
     // ── Shade model ─────────────────────────────────────────────────────
 
-    public void shadeModel(int model) { shadeModel = model; }
+    public void shadeModel(int model) { shadeModel = model; generation++; }
     public int getShadeModel() { return shadeModel; }
 
     // ── Lightmap coordinates (replaces glMultiTexCoord2f) ─────────────
     private float lightmapX = 240.0f;
     private float lightmapY = 240.0f;
 
-    public void setLightmapCoords(float x, float y) { lightmapX = x; lightmapY = y; }
+    public void setLightmapCoords(float x, float y) { lightmapX = x; lightmapY = y; generation++; }
     public float getLightmapX() { return lightmapX; }
     public float getLightmapY() { return lightmapY; }
+
+    // ── Active texture unit (for direct GL11.glEnable(GL_TEXTURE_2D) redirection) ──
+    private int activeTextureUnit = 0;
+
+    public void setActiveTextureUnit(int unit) { activeTextureUnit = unit; }
+    public int getActiveTextureUnit() { return activeTextureUnit; }
 
     // ── Fog color getters ─────────────────────────────────────────────
     public float getFogR() { return fogR; }

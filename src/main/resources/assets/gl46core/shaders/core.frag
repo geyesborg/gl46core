@@ -12,30 +12,26 @@ layout(binding = 1) uniform sampler2D uLightMapTex;
 
 // Per-draw UBO — shared with vertex shader
 layout(std140, binding = 1) uniform PerDraw {
-    vec4 uColor;                // offset 0
-    vec4 uFogColor;             // offset 16
-    float uAlphaRef;            // offset 32
-    float uFogDensity;          // offset 36
-    float uFogStart;            // offset 40
-    float uFogEnd;              // offset 44
-    vec2 uGlobalLightMapCoord;  // offset 48
-    int uAlphaFunc;             // offset 56
-    int uFogMode;               // offset 60
-    int uHasColor;              // offset 64
-    int uHasTexCoord;           // offset 68
-    int uHasNormal;             // offset 72
-    int uLightMapEnabled;       // offset 76
-    int uTextureEnabled;        // offset 80
-    int uAlphaTestEnabled;      // offset 84
-    int uFogEnabled;            // offset 88
-    int uLightingEnabled;       // offset 92
-    int uUseLightMapTexture;    // offset 96
-    int _pad0;                  // offset 100
-    int _pad1;                  // offset 104
-    int _pad2;                  // offset 108
+    vec4 uFogColor;             // offset 0
+    float uAlphaRef;            // offset 16
+    float uFogDensity;          // offset 20
+    float uFogStart;            // offset 24
+    float uFogEnd;              // offset 28
+    vec2 uGlobalLightMapCoord;  // offset 32
+    int uAlphaFunc;             // offset 40
+    int uFogMode;               // offset 44
+    int uLightMapEnabled;       // offset 48
+    int uTextureEnabled;        // offset 52
+    int uAlphaTestEnabled;      // offset 56
+    int uFogEnabled;            // offset 60
+    int uLightingEnabled;       // offset 64
+    int uUseLightMapTexture;    // offset 68
+    int _pad0;                  // offset 72
+    int _pad1;                  // offset 76
 };
 
-layout(location = 0) out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;   // colortex0: final lit color
+layout(location = 1) out vec4 fragData1;   // colortex1: raw lightmap data for Iris
 
 void main() {
     vec4 color = vColor;
@@ -48,14 +44,17 @@ void main() {
 
     // Lightmap — per-vertex UVs (terrain)
     if (uLightMapEnabled != 0) {
-        // Lightmap UVs are shorts scaled to 0-65535, convert to 0-1 for sampling
         vec4 lm = texture(uLightMapTex, vLightMap / 256.0);
         color.rgb *= lm.rgb;
     }
     // Lightmap — global coords (entities, no per-vertex UV but lightmap texture is active)
     else if (uUseLightMapTexture != 0) {
         vec4 lm = texture(uLightMapTex, uGlobalLightMapCoord / 256.0);
-        color.rgb *= lm.rgb;
+        if (uLightingEnabled != 0) {
+            color.rgb *= min(lm.rgb + 0.05, vec3(1.0));
+        } else {
+            color.rgb *= lm.rgb;
+        }
     }
 
     // Alpha test emulation
@@ -95,4 +94,13 @@ void main() {
     }
 
     fragColor = color;
+
+    // colortex1: raw lightmap data for Iris shader pack composite passes
+    if (uLightMapEnabled != 0) {
+        fragData1 = vec4(vLightMap.x / 256.0, vLightMap.y / 256.0, 0.0, 1.0);
+    } else if (uUseLightMapTexture != 0) {
+        fragData1 = vec4(uGlobalLightMapCoord.x / 256.0, uGlobalLightMapCoord.y / 256.0, 0.0, 1.0);
+    } else {
+        fragData1 = vec4(1.0, 1.0, 0.0, 1.0);
+    }
 }

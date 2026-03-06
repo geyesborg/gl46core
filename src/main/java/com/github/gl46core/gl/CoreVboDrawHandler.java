@@ -6,10 +6,6 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL45;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.IntBuffer;
-
 /**
  * Core-profile handler for VBO-based rendering paths.
  * Uses GL4.5 DSA where possible for VAO creation and EBO management.
@@ -44,10 +40,6 @@ public final class CoreVboDrawHandler {
     private static int texSize = 2, texType = GL11.GL_FLOAT, texStride = 0;
     private static long texOffset = 0;
     private static boolean texEnabled = false;
-
-    // Shared EBO for GL_QUADS → GL_TRIANGLES (DSA)
-    private static int ebo = 0;
-    private static int cachedMaxQuads = 0;
 
     // Software-tracked binding state (avoids glGetInteger sync points)
     private static boolean terrainVaoBound = false;
@@ -228,33 +220,10 @@ public final class CoreVboDrawHandler {
         int quadCount = count / 4;
         int indexCount = quadCount * 6;
 
-        // Grow EBO if needed (DSA immutable storage)
         int neededQuads = first / 4 + quadCount;
-        if (neededQuads > cachedMaxQuads) {
-            cachedMaxQuads = Math.max(neededQuads, 256);
-            int maxIndexCount = cachedMaxQuads * 6;
-            IntBuffer indices = ByteBuffer.allocateDirect(maxIndexCount * 4)
-                    .order(ByteOrder.nativeOrder()).asIntBuffer();
-            for (int q = 0; q < cachedMaxQuads; q++) {
-                int base = q * 4;
-                indices.put(base);     indices.put(base + 1); indices.put(base + 2);
-                indices.put(base);     indices.put(base + 2); indices.put(base + 3);
-            }
-            indices.flip();
-
-            // Create new EBO with DSA
-            int[] bufs = new int[1];
-            GL45.glCreateBuffers(bufs);
-            int newEbo = bufs[0];
-            GL45.glNamedBufferStorage(newEbo, indices, 0); // static data
-            if (ebo != 0) GL45.glDeleteBuffers(ebo);
-            ebo = newEbo;
-        }
-
-        // Bind EBO to current VAO
+        int ebo = QuadIndexBuffer.ensure(neededQuads);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
 
-        // Offset into the cached index buffer for the correct first vertex
         int indexOffset = (first / 4) * 6 * 4; // byte offset
         GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, indexOffset);
     }

@@ -1,8 +1,10 @@
 package com.github.gl46core.mixin;
 
+import com.github.gl46core.gl.CoreDrawHandler;
 import com.github.gl46core.gl.CoreMatrixStack;
 import com.github.gl46core.gl.CoreShaderProgram;
 import com.github.gl46core.gl.CoreStateTracker;
+import com.github.gl46core.gl.CoreTextureTracker;
 import com.github.gl46core.gl.CoreVboDrawHandler;
 import net.minecraft.client.renderer.GlStateManager;
 import org.lwjgl.opengl.GL11;
@@ -414,7 +416,8 @@ public abstract class MixinGlStateManager {
     @Overwrite
     public static void setActiveTexture(int texture) {
         activeTextureUnit = texture;
-        GL13.glActiveTexture(texture); // still needed for glTexImage2D, glTexParameteri, etc.
+        CoreStateTracker.INSTANCE.setActiveTextureUnit(texture - GL13.GL_TEXTURE0);
+        GL13.glActiveTexture(texture);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -689,10 +692,12 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason Pass through — bindTexture still exists in core profile
+     * @reason Cancel any pending deletion (compat-profile "delete + re-bind" pattern),
+     *         then pass through to the real glBindTexture.
      */
     @Overwrite
     public static void bindTexture(int texture) {
+        CoreTextureTracker.cancelDeletion(texture);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
     }
 
@@ -774,12 +779,14 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason glDeleteTextures — no-op (allocateTextureImpl rebinds same ID)
+     * @reason Defer deletion so that the compat-profile "delete + re-bind" pattern
+     *         (used by TextureUtil.allocateTextureImpl) works in core profile.
      */
     @Overwrite
     public static void deleteTexture(int texture) {
-        // No-op: The primary caller (TextureUtil.allocateTextureImpl) immediately
-        // rebinds the same ID. Other cleanup paths are infrequent.
+        if (texture > 0) {
+            CoreTextureTracker.markForDeletion(texture);
+        }
     }
 
     /**
