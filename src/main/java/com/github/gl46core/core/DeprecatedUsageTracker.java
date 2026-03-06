@@ -21,6 +21,7 @@ public final class DeprecatedUsageTracker {
     private static final Map<String, Set<String>> usageByFeature = new ConcurrentHashMap<>();
 
     public static void record(String featureName, String className) {
+        if (className.startsWith("net.minecraft.client.renderer.GlStateManager")) return;
         usageByFeature
                 .computeIfAbsent(featureName, k -> ConcurrentHashMap.newKeySet())
                 .add(className);

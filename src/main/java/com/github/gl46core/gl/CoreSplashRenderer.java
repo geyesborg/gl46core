@@ -269,17 +269,14 @@ public final class CoreSplashRenderer {
         if (!GL46CoreConfig.pauseOnDeprecatedGL()) return;
         if (mainWindow == 0) return;
 
-        GLFW.glfwSetInputMode(mainWindow, GLFW.GLFW_STICKY_KEYS, GLFW.GLFW_TRUE);
-
-        boolean waiting = true;
-        while (waiting && !GLFW.glfwWindowShouldClose(mainWindow)) {
+        while (!GLFW.glfwWindowShouldClose(mainWindow)) {
             renderWarningFrame(lines);
             GLFW.glfwSwapBuffers(mainWindow);
             GLFW.glfwPollEvents();
 
             if (GLFW.glfwGetKey(mainWindow, GLFW.GLFW_KEY_ENTER) == GLFW.GLFW_PRESS
                     || GLFW.glfwGetKey(mainWindow, GLFW.GLFW_KEY_KP_ENTER) == GLFW.GLFW_PRESS) {
-                waiting = false;
+                break;
             }
 
             try { Thread.sleep(16); } catch (InterruptedException ignored) {}

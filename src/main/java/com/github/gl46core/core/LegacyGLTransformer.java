@@ -170,6 +170,7 @@ public class LegacyGLTransformer implements IClassTransformer {
     // ── Excluded package prefixes ────────────────────────────────────
     private static final String[] EXCLUDED_PREFIXES = {
         "com.github.gl46core.",        // our own mod
+        "net.minecraft.client.renderer.GlStateManager", // handled by MixinGlStateManager
         "org.lwjgl.",                  // LWJGL itself
         "org.objectweb.asm.",          // ASM library
         "org.spongepowered.asm.",      // Mixin
