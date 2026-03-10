@@ -92,17 +92,24 @@ public class GL46Core {
         try {
             // GL_DEBUG_OUTPUT = 0x92E0 (async — no sync stalls)
             GL11.glEnable(0x92E0);
-            // Do NOT enable GL_DEBUG_OUTPUT_SYNCHRONOUS (0x8242) — it forces driver sync on every GL call
+            // ENABLE SYNCHRONOUS for debugging so we get accurate stack traces
+            GL11.glEnable(0x8242);
+            
             GL43.glDebugMessageCallback((GLDebugMessageCallbackI) (source, type, id, severity, length, message, userParam) -> {
                 // GL_DEBUG_TYPE_ERROR = 0x824C, GL_DEBUG_SEVERITY_HIGH = 0x9146
                 // Only log actual errors, not performance warnings (which spam on NVIDIA)
                 if (type == 0x824C || severity == 0x9146) {
                     String msg = MemoryUtil.memUTF8(message, length);
-                    LOGGER.error("[GL DEBUG] type=0x{} sev=0x{}: {}",
-                        Integer.toHexString(type), Integer.toHexString(severity), msg);
+                    if (msg.contains("Uniform is not an array") || msg.contains("invalid")) {
+                        LOGGER.error("[GL DEBUG] type=0x{} sev=0x{}: {}",
+                            Integer.toHexString(type), Integer.toHexString(severity), msg, new RuntimeException("GL ERROR TRACE"));
+                    } else {
+                        LOGGER.error("[GL DEBUG] type=0x{} sev=0x{}: {}",
+                            Integer.toHexString(type), Integer.toHexString(severity), msg);
+                    }
                 }
             }, 0L);
-            LOGGER.info("GL debug output enabled (async, errors only)");
+            LOGGER.info("GL debug output enabled (sync, stack traces)");
         } catch (Throwable e) {
             LOGGER.warn("Failed to enable GL debug output: {}", e.getMessage());
         }

@@ -85,101 +85,145 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason glMatrixMode removed in core profile — track in CoreMatrixStack
+     * @reason glMatrixMode removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void matrixMode(int mode) {
-        CoreMatrixStack.INSTANCE.matrixMode(mode);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordMatrixMode(mode);
+        } else {
+            CoreMatrixStack.INSTANCE.matrixMode(mode);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glPushMatrix removed in core profile — track in CoreMatrixStack
+     * @reason glPushMatrix removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void pushMatrix() {
-        CoreMatrixStack.INSTANCE.pushMatrix();
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordPushMatrix();
+        } else {
+            CoreMatrixStack.INSTANCE.pushMatrix();
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glPopMatrix removed in core profile — track in CoreMatrixStack
+     * @reason glPopMatrix removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void popMatrix() {
-        CoreMatrixStack.INSTANCE.popMatrix();
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordPopMatrix();
+        } else {
+            CoreMatrixStack.INSTANCE.popMatrix();
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glLoadIdentity removed in core profile — track in CoreMatrixStack
+     * @reason glLoadIdentity removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void loadIdentity() {
-        CoreMatrixStack.INSTANCE.loadIdentity();
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordLoadIdentity();
+        } else {
+            CoreMatrixStack.INSTANCE.loadIdentity();
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glOrtho removed in core profile — track in CoreMatrixStack
+     * @reason glOrtho removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void ortho(double left, double right, double bottom, double top, double zNear, double zFar) {
-        CoreMatrixStack.INSTANCE.ortho(left, right, bottom, top, zNear, zFar);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordOrtho(left, right, bottom, top, zNear, zFar);
+        } else {
+            CoreMatrixStack.INSTANCE.ortho(left, right, bottom, top, zNear, zFar);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glRotatef removed in core profile — track in CoreMatrixStack
+     * @reason glRotatef removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void rotate(float angle, float x, float y, float z) {
-        CoreMatrixStack.INSTANCE.rotate(angle, x, y, z);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordRotate(angle, x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.rotate(angle, x, y, z);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glScalef removed in core profile — track in CoreMatrixStack
+     * @reason glScalef removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void scale(float x, float y, float z) {
-        CoreMatrixStack.INSTANCE.scale(x, y, z);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordScale(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.scale(x, y, z);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glScaled removed in core profile — track in CoreMatrixStack
+     * @reason glScaled removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void scale(double x, double y, double z) {
-        CoreMatrixStack.INSTANCE.scale(x, y, z);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordScale(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.scale(x, y, z);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glTranslatef removed in core profile — track in CoreMatrixStack
+     * @reason glTranslatef removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void translate(float x, float y, float z) {
-        CoreMatrixStack.INSTANCE.translate(x, y, z);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordTranslate(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.translate(x, y, z);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glTranslated removed in core profile — track in CoreMatrixStack
+     * @reason glTranslated removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void translate(double x, double y, double z) {
-        CoreMatrixStack.INSTANCE.translate(x, y, z);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordTranslate(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.translate(x, y, z);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glMultMatrix removed in core profile — track in CoreMatrixStack
+     * @reason glMultMatrix removed in core profile — track in CoreMatrixStack or record for display list
      */
     @Overwrite
     public static void multMatrix(FloatBuffer matrix) {
-        CoreMatrixStack.INSTANCE.multMatrix(matrix);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordMultMatrix(matrix);
+        } else {
+            CoreMatrixStack.INSTANCE.multMatrix(matrix);
+        }
     }
 
     /**
@@ -363,6 +407,9 @@ public abstract class MixinGlStateManager {
     @Overwrite
     public static void color(float r, float g, float b, float a) {
         CoreStateTracker.INSTANCE.color(r, g, b, a);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     /**
@@ -372,6 +419,9 @@ public abstract class MixinGlStateManager {
     @Overwrite
     public static void color(float r, float g, float b) {
         CoreStateTracker.INSTANCE.color(r, g, b, 1.0f);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     /**
@@ -711,7 +761,9 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void glTexEnvi(int target, int pname, int param) {
-        // No-op: texture environment removed in core profile
+        if (pname == 0x2200) { // GL_TEXTURE_ENV_MODE
+            CoreStateTracker.INSTANCE.setTexEnvMode(param);
+        }
     }
 
     /**
@@ -720,7 +772,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void glTexEnvf(int target, int pname, float param) {
-        // No-op: texture environment removed in core profile
+        // TexEnv float params (e.g. GL_RGB_SCALE) — not commonly needed
     }
 
     /**
@@ -729,7 +781,11 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void glTexEnv(int target, int pname, FloatBuffer params) {
-        // No-op: texture environment removed in core profile
+        if (pname == 0x2201 && params.remaining() >= 4) { // GL_TEXTURE_ENV_COLOR
+            CoreStateTracker.INSTANCE.setTexEnvColor(
+                    params.get(params.position()), params.get(params.position() + 1),
+                    params.get(params.position() + 2), params.get(params.position() + 3));
+        }
     }
 
     /**
@@ -953,52 +1009,52 @@ public abstract class MixinGlStateManager {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Display lists → no-ops (immediate mode removed in core profile)
+    // Display lists → emulated via VAO/VBO (record at glNewList, replay at glCallList)
     // ═══════════════════════════════════════════════════════════════════
 
     /**
      * @author GL46Core
-     * @reason glCallList removed in core profile — no-op
+     * @reason glCallList removed in core profile — replay recorded geometry as VAO/VBO
      */
     @Overwrite
     public static void callList(int list) {
-        // No-op: display lists removed in core profile
+        com.github.gl46core.gl.DisplayListCache.INSTANCE.callList(list);
     }
 
     /**
      * @author GL46Core
-     * @reason glGenLists removed — return dummy ID
+     * @reason glGenLists removed — return first ID of contiguous block for our cache
      */
     @Overwrite
     public static int glGenLists(int range) {
-        return 1; // Dummy ID
+        return com.github.gl46core.gl.DisplayListCache.INSTANCE.genLists(range);
     }
 
     /**
      * @author GL46Core
-     * @reason glNewList removed — no-op
+     * @reason glNewList removed — start recording geometry for VAO/VBO replay
      */
     @Overwrite
     public static void glNewList(int list, int mode) {
-        // No-op
+        com.github.gl46core.gl.DisplayListCache.INSTANCE.startRecording(list, mode);
     }
 
     /**
      * @author GL46Core
-     * @reason glEndList removed — no-op
+     * @reason glEndList removed — finish recording
      */
     @Overwrite
     public static void glEndList() {
-        // No-op
+        com.github.gl46core.gl.DisplayListCache.INSTANCE.endRecording();
     }
 
     /**
      * @author GL46Core
-     * @reason glDeleteLists removed — no-op
+     * @reason glDeleteLists removed — remove from cache
      */
     @Overwrite
     public static void glDeleteLists(int list, int range) {
-        // No-op
+        com.github.gl46core.gl.DisplayListCache.INSTANCE.deleteLists(list, range);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1007,48 +1063,69 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason glBegin removed in core profile — route to ImmediateModeEmulator
+     * @reason glBegin removed in core profile — route to ImmediateModeEmulator or DisplayListCache
      */
     @Overwrite
     public static void glBegin(int mode) {
-        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.syncColorFromState();
-        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.begin(mode);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.syncColorFromState();
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordBegin(mode);
+        } else {
+            com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.syncColorFromState();
+            com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.begin(mode);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glEnd removed in core profile — route to ImmediateModeEmulator
+     * @reason glEnd removed in core profile — route to ImmediateModeEmulator or DisplayListCache
      */
     @Overwrite
     public static void glEnd() {
-        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.end();
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordEnd();
+        } else {
+            com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.end();
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glVertex3f removed in core profile — route to ImmediateModeEmulator
+     * @reason glVertex3f removed in core profile — route to ImmediateModeEmulator or DisplayListCache
      */
     @Overwrite
     public static void glVertex3f(float x, float y, float z) {
-        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.vertex3f(x, y, z);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordVertex(x, y, z);
+        } else {
+            com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.vertex3f(x, y, z);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glNormal3f removed in core profile — route to ImmediateModeEmulator
+     * @reason glNormal3f removed in core profile — route to ImmediateModeEmulator or DisplayListCache
      */
     @Overwrite
     public static void glNormal3f(float x, float y, float z) {
-        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.normal3f(x, y, z);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordNormal(x, y, z);
+        } else {
+            com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.normal3f(x, y, z);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason glTexCoord2f removed in core profile — route to ImmediateModeEmulator
+     * @reason glTexCoord2f removed in core profile — route to ImmediateModeEmulator or DisplayListCache
      */
     @Overwrite
     public static void glTexCoord2f(float u, float v) {
-        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.texCoord2f(u, v);
+        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
+            com.github.gl46core.gl.DisplayListCache.INSTANCE.recordTexCoord(u, v);
+        } else {
+            com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.texCoord2f(u, v);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1061,34 +1138,58 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void texGen(GlStateManager.TexGen coord, int pname) {
-        // No-op
+        int idx = texGenCoordIndex(coord);
+        if (idx >= 0 && pname >= 0x2400 && pname <= 0x2402) { // GL_EYE_LINEAR..GL_SPHERE_MAP
+            CoreStateTracker.INSTANCE.setTexGenMode(idx, pname);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason texGen removed in core profile — no-op
+     * @reason texGen removed in core profile — emulated via CoreStateTracker
      */
     @Overwrite
     public static void texGen(GlStateManager.TexGen coord, int pname, FloatBuffer params) {
-        // No-op
+        int idx = texGenCoordIndex(coord);
+        if (idx < 0 || params.remaining() < 4) return;
+        float a = params.get(params.position()), b = params.get(params.position() + 1);
+        float c = params.get(params.position() + 2), d = params.get(params.position() + 3);
+        if (pname == 0x2501) { // GL_OBJECT_PLANE
+            CoreStateTracker.INSTANCE.setTexGenObjectPlane(idx, a, b, c, d);
+        } else if (pname == 0x2502) { // GL_EYE_PLANE
+            CoreStateTracker.INSTANCE.setTexGenEyePlane(idx, a, b, c, d);
+        } else if (pname == 0x2500) { // GL_TEXTURE_GEN_MODE
+            CoreStateTracker.INSTANCE.setTexGenMode(idx, (int) a);
+        }
     }
 
     /**
      * @author GL46Core
-     * @reason GL_TEXTURE_GEN_S/T/R/Q removed in core profile — no-op
+     * @reason GL_TEXTURE_GEN_S/T/R/Q removed in core profile — emulated via CoreStateTracker
      */
     @Overwrite
     public static void enableTexGenCoord(GlStateManager.TexGen texGen) {
-        // No-op
+        int idx = texGenCoordIndex(texGen);
+        if (idx >= 0) CoreStateTracker.INSTANCE.enableTexGen(idx);
     }
 
     /**
      * @author GL46Core
-     * @reason GL_TEXTURE_GEN_S/T/R/Q removed in core profile — no-op
+     * @reason GL_TEXTURE_GEN_S/T/R/Q removed in core profile — emulated via CoreStateTracker
      */
     @Overwrite
     public static void disableTexGenCoord(GlStateManager.TexGen texGen) {
-        // No-op
+        int idx = texGenCoordIndex(texGen);
+        if (idx >= 0) CoreStateTracker.INSTANCE.disableTexGen(idx);
+    }
+
+    private static int texGenCoordIndex(GlStateManager.TexGen coord) {
+        return switch (coord) {
+            case S -> 0;
+            case T -> 1;
+            case R -> 2;
+            case Q -> 3;
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════════

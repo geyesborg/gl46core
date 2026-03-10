@@ -32,6 +32,9 @@ public final class CoreStateTracker {
         boolean normalizeEnabled, rescaleNormalEnabled;
         boolean colorMaterialEnabled;
         int shadeModel;
+        int texEnvMode;
+        boolean[] texGenEnabled = new boolean[4];
+        int[] texGenMode = new int[4];
     }
 
     // Generation counter — increments on every state mutation.
@@ -67,6 +70,9 @@ public final class CoreStateTracker {
         s.rescaleNormalEnabled = rescaleNormalEnabled;
         s.colorMaterialEnabled = colorMaterialEnabled;
         s.shadeModel = shadeModel;
+        s.texEnvMode = texEnvMode;
+        System.arraycopy(texGenEnabled, 0, s.texGenEnabled, 0, 4);
+        System.arraycopy(texGenMode, 0, s.texGenMode, 0, 4);
         attribStack[attribStackPointer++] = s;
     }
 
@@ -90,6 +96,9 @@ public final class CoreStateTracker {
         rescaleNormalEnabled = s.rescaleNormalEnabled;
         colorMaterialEnabled = s.colorMaterialEnabled;
         shadeModel = s.shadeModel;
+        texEnvMode = s.texEnvMode;
+        System.arraycopy(s.texGenEnabled, 0, texGenEnabled, 0, 4);
+        System.arraycopy(s.texGenMode, 0, texGenMode, 0, 4);
         generation++;
     }
 
@@ -248,4 +257,42 @@ public final class CoreStateTracker {
     public float getFogG() { return fogG; }
     public float getFogB() { return fogB; }
     public float getFogA() { return fogA; }
+
+    // ── TexEnv mode ─────────────────────────────────────────────────
+    // GL_MODULATE=0x2100, GL_REPLACE=0x1E01, GL_DECAL=0x2101,
+    // GL_BLEND=0x0BE2, GL_ADD=0x0104, GL_COMBINE=0x8570
+    private int texEnvMode = 0x2100; // GL_MODULATE (default)
+    private float texEnvColorR = 0, texEnvColorG = 0, texEnvColorB = 0, texEnvColorA = 0;
+
+    public void setTexEnvMode(int mode) { texEnvMode = mode; generation++; }
+    public int getTexEnvMode() { return texEnvMode; }
+    public void setTexEnvColor(float r, float g, float b, float a) {
+        texEnvColorR = r; texEnvColorG = g; texEnvColorB = b; texEnvColorA = a; generation++;
+    }
+    public float getTexEnvColorR() { return texEnvColorR; }
+    public float getTexEnvColorG() { return texEnvColorG; }
+    public float getTexEnvColorB() { return texEnvColorB; }
+    public float getTexEnvColorA() { return texEnvColorA; }
+
+    // ── TexGen ──────────────────────────────────────────────────────
+    // Indices: 0=S, 1=T, 2=R, 3=Q
+    // Modes: GL_OBJECT_LINEAR=0x2401, GL_EYE_LINEAR=0x2400, GL_SPHERE_MAP=0x2402
+    private final boolean[] texGenEnabled = new boolean[4];
+    private final int[] texGenMode = {0x2400, 0x2400, 0x2400, 0x2400}; // default EYE_LINEAR
+    private final float[][] texGenObjectPlane = {{1,0,0,0},{0,1,0,0},{0,0,0,0},{0,0,0,0}};
+    private final float[][] texGenEyePlane = {{1,0,0,0},{0,1,0,0},{0,0,0,0},{0,0,0,0}};
+
+    public void enableTexGen(int coord) { if (coord >= 0 && coord < 4) { texGenEnabled[coord] = true; generation++; } }
+    public void disableTexGen(int coord) { if (coord >= 0 && coord < 4) { texGenEnabled[coord] = false; generation++; } }
+    public boolean isTexGenEnabled(int coord) { return coord >= 0 && coord < 4 && texGenEnabled[coord]; }
+    public void setTexGenMode(int coord, int mode) { if (coord >= 0 && coord < 4) { texGenMode[coord] = mode; generation++; } }
+    public int getTexGenMode(int coord) { return coord >= 0 && coord < 4 ? texGenMode[coord] : 0x2400; }
+    public void setTexGenObjectPlane(int coord, float a, float b, float c, float d) {
+        if (coord >= 0 && coord < 4) { texGenObjectPlane[coord][0] = a; texGenObjectPlane[coord][1] = b; texGenObjectPlane[coord][2] = c; texGenObjectPlane[coord][3] = d; generation++; }
+    }
+    public float[] getTexGenObjectPlane(int coord) { return coord >= 0 && coord < 4 ? texGenObjectPlane[coord] : new float[4]; }
+    public void setTexGenEyePlane(int coord, float a, float b, float c, float d) {
+        if (coord >= 0 && coord < 4) { texGenEyePlane[coord][0] = a; texGenEyePlane[coord][1] = b; texGenEyePlane[coord][2] = c; texGenEyePlane[coord][3] = d; generation++; }
+    }
+    public float[] getTexGenEyePlane(int coord) { return coord >= 0 && coord < 4 ? texGenEyePlane[coord] : new float[4]; }
 }

@@ -17,59 +17,111 @@ public final class LegacyGLRedirects {
     private LegacyGLRedirects() {}
 
     // ═══════════════════════════════════════════════════════════════════
-    // Matrix operations
+    // Matrix operations (record when display list recording, else execute)
     // ═══════════════════════════════════════════════════════════════════
 
     public static void glMatrixMode(int mode) {
-        CoreMatrixStack.INSTANCE.matrixMode(mode);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordMatrixMode(mode);
+        } else {
+            CoreMatrixStack.INSTANCE.matrixMode(mode);
+        }
     }
 
     public static void glPushMatrix() {
-        CoreMatrixStack.INSTANCE.pushMatrix();
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordPushMatrix();
+        } else {
+            CoreMatrixStack.INSTANCE.pushMatrix();
+        }
     }
 
     public static void glPopMatrix() {
-        CoreMatrixStack.INSTANCE.popMatrix();
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordPopMatrix();
+        } else {
+            CoreMatrixStack.INSTANCE.popMatrix();
+        }
     }
 
     public static void glLoadIdentity() {
-        CoreMatrixStack.INSTANCE.loadIdentity();
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordLoadIdentity();
+        } else {
+            CoreMatrixStack.INSTANCE.loadIdentity();
+        }
     }
 
     public static void glMultMatrix(FloatBuffer matrix) {
-        CoreMatrixStack.INSTANCE.multMatrix(matrix);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordMultMatrix(matrix);
+        } else {
+            CoreMatrixStack.INSTANCE.multMatrix(matrix);
+        }
     }
 
     public static void glLoadMatrix(FloatBuffer matrix) {
-        CoreMatrixStack.INSTANCE.loadMatrix(matrix);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordLoadMatrix(matrix);
+        } else {
+            CoreMatrixStack.INSTANCE.loadMatrix(matrix);
+        }
     }
 
     public static void glTranslatef(float x, float y, float z) {
-        CoreMatrixStack.INSTANCE.translate(x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordTranslate(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.translate(x, y, z);
+        }
     }
 
     public static void glTranslated(double x, double y, double z) {
-        CoreMatrixStack.INSTANCE.translate(x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordTranslate(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.translate(x, y, z);
+        }
     }
 
     public static void glRotatef(float angle, float x, float y, float z) {
-        CoreMatrixStack.INSTANCE.rotate(angle, x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordRotate(angle, x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.rotate(angle, x, y, z);
+        }
     }
 
     public static void glRotated(double angle, double x, double y, double z) {
-        CoreMatrixStack.INSTANCE.rotate((float) angle, (float) x, (float) y, (float) z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordRotate((float) angle, (float) x, (float) y, (float) z);
+        } else {
+            CoreMatrixStack.INSTANCE.rotate((float) angle, (float) x, (float) y, (float) z);
+        }
     }
 
     public static void glScalef(float x, float y, float z) {
-        CoreMatrixStack.INSTANCE.scale(x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordScale(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.scale(x, y, z);
+        }
     }
 
     public static void glScaled(double x, double y, double z) {
-        CoreMatrixStack.INSTANCE.scale(x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordScale(x, y, z);
+        } else {
+            CoreMatrixStack.INSTANCE.scale(x, y, z);
+        }
     }
 
     public static void glOrtho(double left, double right, double bottom, double top, double zNear, double zFar) {
-        CoreMatrixStack.INSTANCE.ortho(left, right, bottom, top, zNear, zFar);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordOrtho(left, right, bottom, top, zNear, zFar);
+        } else {
+            CoreMatrixStack.INSTANCE.ortho(left, right, bottom, top, zNear, zFar);
+        }
     }
 
     private static final org.joml.Matrix4f tempMatrix = new org.joml.Matrix4f();
@@ -125,7 +177,10 @@ public final class LegacyGLRedirects {
             case 0x4000, 0x4001, 0x4002, 0x4003,                                  // GL_LIGHT0-7
                  0x4004, 0x4005, 0x4006, 0x4007 ->
                     CoreStateTracker.INSTANCE.enableLight(cap - 0x4000);
-            case 0x0C60, 0x0C61, 0x0C62, 0x0C63 -> {}                             // GL_TEXTURE_GEN_S/T/R/Q — no-op
+            case 0x0C60 -> CoreStateTracker.INSTANCE.enableTexGen(0);               // GL_TEXTURE_GEN_S
+            case 0x0C61 -> CoreStateTracker.INSTANCE.enableTexGen(1);               // GL_TEXTURE_GEN_T
+            case 0x0C62 -> CoreStateTracker.INSTANCE.enableTexGen(2);               // GL_TEXTURE_GEN_R
+            case 0x0C63 -> CoreStateTracker.INSTANCE.enableTexGen(3);               // GL_TEXTURE_GEN_Q
             default -> org.lwjgl.opengl.GL11.glEnable(cap);                        // core caps pass through
         }
     }
@@ -143,7 +198,10 @@ public final class LegacyGLRedirects {
             case 0x4000, 0x4001, 0x4002, 0x4003,
                  0x4004, 0x4005, 0x4006, 0x4007 ->
                     CoreStateTracker.INSTANCE.disableLight(cap - 0x4000);
-            case 0x0C60, 0x0C61, 0x0C62, 0x0C63 -> {}
+            case 0x0C60 -> CoreStateTracker.INSTANCE.disableTexGen(0);
+            case 0x0C61 -> CoreStateTracker.INSTANCE.disableTexGen(1);
+            case 0x0C62 -> CoreStateTracker.INSTANCE.disableTexGen(2);
+            case 0x0C63 -> CoreStateTracker.INSTANCE.disableTexGen(3);
             default -> org.lwjgl.opengl.GL11.glDisable(cap);
         }
     }
@@ -154,30 +212,48 @@ public final class LegacyGLRedirects {
 
     public static void glColor4f(float r, float g, float b, float a) {
         CoreStateTracker.INSTANCE.color(r, g, b, a);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     public static void glColor3f(float r, float g, float b) {
         CoreStateTracker.INSTANCE.color(r, g, b, 1.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     public static void glColor4d(double r, double g, double b, double a) {
         CoreStateTracker.INSTANCE.color((float) r, (float) g, (float) b, (float) a);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     public static void glColor3d(double r, double g, double b) {
         CoreStateTracker.INSTANCE.color((float) r, (float) g, (float) b, 1.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     public static void glColor4ub(byte r, byte g, byte b, byte a) {
         CoreStateTracker.INSTANCE.color(
                 (r & 0xFF) / 255.0f, (g & 0xFF) / 255.0f,
                 (b & 0xFF) / 255.0f, (a & 0xFF) / 255.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     public static void glColor3ub(byte r, byte g, byte b) {
         CoreStateTracker.INSTANCE.color(
                 (r & 0xFF) / 255.0f, (g & 0xFF) / 255.0f,
                 (b & 0xFF) / 255.0f, 1.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.syncColorFromState();
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -193,75 +269,138 @@ public final class LegacyGLRedirects {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Immediate mode — all variants
+    // Immediate mode — all variants (route to DisplayListCache when recording)
     // ═══════════════════════════════════════════════════════════════════
 
     public static void glBegin(int mode) {
-        ImmediateModeEmulator.INSTANCE.syncColorFromState();
-        ImmediateModeEmulator.INSTANCE.begin(mode);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.syncColorFromState();
+            DisplayListCache.INSTANCE.recordBegin(mode);
+        } else {
+            ImmediateModeEmulator.INSTANCE.syncColorFromState();
+            ImmediateModeEmulator.INSTANCE.begin(mode);
+        }
     }
 
     public static void glEnd() {
-        ImmediateModeEmulator.INSTANCE.end();
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordEnd();
+        } else {
+            ImmediateModeEmulator.INSTANCE.end();
+        }
     }
 
     public static void glVertex3f(float x, float y, float z) {
-        ImmediateModeEmulator.INSTANCE.vertex3f(x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex(x, y, z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f(x, y, z);
+        }
     }
 
     public static void glVertex2f(float x, float y) {
-        ImmediateModeEmulator.INSTANCE.vertex3f(x, y, 0.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex(x, y, 0.0f);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f(x, y, 0.0f);
+        }
     }
 
     public static void glVertex3d(double x, double y, double z) {
-        ImmediateModeEmulator.INSTANCE.vertex3f((float) x, (float) y, (float) z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex((float) x, (float) y, (float) z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f((float) x, (float) y, (float) z);
+        }
     }
 
     public static void glVertex2d(double x, double y) {
-        ImmediateModeEmulator.INSTANCE.vertex3f((float) x, (float) y, 0.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex((float) x, (float) y, 0.0f);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f((float) x, (float) y, 0.0f);
+        }
     }
 
     public static void glVertex2i(int x, int y) {
-        ImmediateModeEmulator.INSTANCE.vertex3f(x, y, 0.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex(x, y, 0.0f);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f(x, y, 0.0f);
+        }
     }
 
     public static void glTexCoord2f(float u, float v) {
-        ImmediateModeEmulator.INSTANCE.texCoord2f(u, v);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordTexCoord(u, v);
+        } else {
+            ImmediateModeEmulator.INSTANCE.texCoord2f(u, v);
+        }
     }
 
     public static void glTexCoord2d(double u, double v) {
-        ImmediateModeEmulator.INSTANCE.texCoord2f((float) u, (float) v);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordTexCoord((float) u, (float) v);
+        } else {
+            ImmediateModeEmulator.INSTANCE.texCoord2f((float) u, (float) v);
+        }
     }
 
     public static void glNormal3f(float x, float y, float z) {
-        ImmediateModeEmulator.INSTANCE.normal3f(x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordNormal(x, y, z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.normal3f(x, y, z);
+        }
     }
 
     public static void glNormal3d(double x, double y, double z) {
-        ImmediateModeEmulator.INSTANCE.normal3f((float) x, (float) y, (float) z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordNormal((float) x, (float) y, (float) z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.normal3f((float) x, (float) y, (float) z);
+        }
     }
 
     public static void glNormal3i(int x, int y, int z) {
-        ImmediateModeEmulator.INSTANCE.normal3f(x, y, z);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordNormal(x, y, z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.normal3f(x, y, z);
+        }
     }
 
     public static void glNormal3b(byte x, byte y, byte z) {
-        ImmediateModeEmulator.INSTANCE.normal3f(x / 127.0f, y / 127.0f, z / 127.0f);
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordNormal(x / 127.0f, y / 127.0f, z / 127.0f);
+        } else {
+            ImmediateModeEmulator.INSTANCE.normal3f(x / 127.0f, y / 127.0f, z / 127.0f);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Display lists — all no-ops in core profile
+    // Display lists — emulated via VAO/VBO (for direct GL11 calls)
     // ═══════════════════════════════════════════════════════════════════
 
-    public static void glCallList(int list) {}
+    public static void glCallList(int list) {
+        DisplayListCache.INSTANCE.callList(list);
+    }
 
-    public static int glGenLists(int range) { return 1; }
+    public static int glGenLists(int range) {
+        return DisplayListCache.INSTANCE.genLists(range);
+    }
 
-    public static void glNewList(int list, int mode) {}
+    public static void glNewList(int list, int mode) {
+        DisplayListCache.INSTANCE.startRecording(list, mode);
+    }
 
-    public static void glEndList() {}
+    public static void glEndList() {
+        DisplayListCache.INSTANCE.endRecording();
+    }
 
-    public static void glDeleteLists(int list, int range) {}
+    public static void glDeleteLists(int list, int range) {
+        DisplayListCache.INSTANCE.deleteLists(list, range);
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // Attribute stack
@@ -340,11 +479,23 @@ public final class LegacyGLRedirects {
     // Texture environment — no-op in core profile
     // ═══════════════════════════════════════════════════════════════════
 
-    public static void glTexEnvi(int target, int pname, int param) {}
+    public static void glTexEnvi(int target, int pname, int param) {
+        if (pname == 0x2200) { // GL_TEXTURE_ENV_MODE
+            CoreStateTracker.INSTANCE.setTexEnvMode(param);
+        }
+    }
 
-    public static void glTexEnvf(int target, int pname, float param) {}
+    public static void glTexEnvf(int target, int pname, float param) {
+        // TexEnv float params (e.g. GL_RGB_SCALE) — not commonly needed
+    }
 
-    public static void glTexEnvfv(int target, int pname, FloatBuffer params) {}
+    public static void glTexEnvfv(int target, int pname, FloatBuffer params) {
+        if (pname == 0x2201 && params.remaining() >= 4) { // GL_TEXTURE_ENV_COLOR
+            CoreStateTracker.INSTANCE.setTexEnvColor(
+                    params.get(params.position()), params.get(params.position() + 1),
+                    params.get(params.position() + 2), params.get(params.position() + 3));
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // Color material — no-op in core profile

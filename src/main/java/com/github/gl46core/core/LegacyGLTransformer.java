@@ -112,12 +112,12 @@ public class LegacyGLTransformer implements IClassTransformer {
         table.put(new CallKey(GL11, "glNormal3i", "(III)V"),       new Redirect("glNormal3i"));
         table.put(new CallKey(GL11, "glNormal3b", "(BBB)V"),       new Redirect("glNormal3b"));
 
-        // ── Display lists (no-op — geometry rendered via display lists will be invisible) ──
-        table.put(new CallKey(GL11, "glCallList", "(I)V"),         Redirect.deprecated("glCallList", "Display Lists"));
-        table.put(new CallKey(GL11, "glGenLists", "(I)I"),         Redirect.deprecated("glGenLists", "Display Lists"));
-        table.put(new CallKey(GL11, "glNewList", "(II)V"),         Redirect.deprecated("glNewList", "Display Lists"));
-        table.put(new CallKey(GL11, "glEndList", "()V"),           Redirect.deprecated("glEndList", "Display Lists"));
-        table.put(new CallKey(GL11, "glDeleteLists", "(II)V"),     Redirect.deprecated("glDeleteLists", "Display Lists"));
+        // ── Display lists (emulated via VAO/VBO in LegacyGLRedirects) ──
+        table.put(new CallKey(GL11, "glCallList", "(I)V"),         new Redirect("glCallList"));
+        table.put(new CallKey(GL11, "glGenLists", "(I)I"),         new Redirect("glGenLists"));
+        table.put(new CallKey(GL11, "glNewList", "(II)V"),         new Redirect("glNewList"));
+        table.put(new CallKey(GL11, "glEndList", "()V"),           new Redirect("glEndList"));
+        table.put(new CallKey(GL11, "glDeleteLists", "(II)V"),     new Redirect("glDeleteLists"));
 
         // ── Attribute stack ───────────────────────────────────────────
         table.put(new CallKey(GL11, "glPushAttrib", "(I)V"),       new Redirect("glPushAttrib"));

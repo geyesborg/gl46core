@@ -55,9 +55,11 @@ public final class CoreMatrixStack {
     /**
      * Push the current matrix onto the active stack.
      * Replaces glPushMatrix().
+     * Must mark dirty so that any subsequent modifications + pop are detected.
      */
     public void pushMatrix() {
         activeStack().pushMatrix();
+        markDirty();
     }
 
     /**
@@ -90,8 +92,18 @@ public final class CoreMatrixStack {
     /**
      * Post-multiply by a rotation matrix.
      * Replaces glRotatef().
+     * Legacy glRotatef normalizes the axis vector internally; JOML does not,
+     * so we must normalize here to avoid incorrect rotations (e.g. portal nausea
+     * passes axis (0,1,1) which has length √2).
      */
     public void rotate(float angle, float x, float y, float z) {
+        float len = (float) Math.sqrt(x * x + y * y + z * z);
+        if (len > 1e-8f) {
+            float inv = 1.0f / len;
+            x *= inv;
+            y *= inv;
+            z *= inv;
+        }
         activeStack().rotate((float) Math.toRadians(angle), x, y, z);
         markDirty();
     }
@@ -243,4 +255,5 @@ public final class CoreMatrixStack {
             default -> {}
         }
     }
+
 }

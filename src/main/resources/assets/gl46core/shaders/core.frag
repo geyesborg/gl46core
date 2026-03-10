@@ -26,8 +26,16 @@ layout(std140, binding = 1) uniform PerDraw {
     int uFogEnabled;            // offset 60
     int uLightingEnabled;       // offset 64
     int uUseLightMapTexture;    // offset 68
-    int _pad0;                  // offset 72
-    int _pad1;                  // offset 76
+    int uTexEnvMode;            // offset 72
+    int uTexGenEnabled;         // offset 76
+    vec4 uTexGenEyePlaneS;      // offset 80
+    vec4 uTexGenEyePlaneT;      // offset 96
+    vec4 uTexGenObjectPlaneS;   // offset 112
+    vec4 uTexGenObjectPlaneT;   // offset 128
+    int uTexGenSMode;           // offset 144
+    int uTexGenTMode;           // offset 148
+    int _pad0;                  // offset 152
+    int _pad1;                  // offset 156
 };
 
 layout(location = 0) out vec4 fragColor;   // colortex0: final lit color
@@ -36,10 +44,31 @@ layout(location = 1) out vec4 fragData1;   // colortex1: raw lightmap data for I
 void main() {
     vec4 color = vColor;
 
-    // Sample texture if enabled
+    // Sample texture and apply TexEnv mode
     if (uTextureEnabled != 0) {
         vec4 texColor = texture(uTexture, vTexCoord);
-        color *= texColor;
+
+        // GL_MODULATE=0x2100, GL_REPLACE=0x1E01, GL_DECAL=0x2101,
+        // GL_BLEND=0x0BE2, GL_ADD=0x0104
+        if (uTexEnvMode == 0x1E01) {
+            // GL_REPLACE: output = texture color
+            color = texColor;
+        } else if (uTexEnvMode == 0x2101) {
+            // GL_DECAL: blend texture over vertex color using texture alpha
+            color.rgb = mix(color.rgb, texColor.rgb, texColor.a);
+            // alpha unchanged
+        } else if (uTexEnvMode == 0x0BE2) {
+            // GL_BLEND: Cf*(1-Ct) + Cc*Ct  (Cc = texture env color, not implemented yet → use white)
+            color.rgb = color.rgb * (1.0 - texColor.rgb) + texColor.rgb;
+            color.a *= texColor.a;
+        } else if (uTexEnvMode == 0x0104) {
+            // GL_ADD: Cf + Ct, clamped
+            color.rgb = min(color.rgb + texColor.rgb, vec3(1.0));
+            color.a *= texColor.a;
+        } else {
+            // GL_MODULATE (0x2100) or default: multiply
+            color *= texColor;
+        }
     }
 
     // Lightmap — per-vertex UVs (terrain)

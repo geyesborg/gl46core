@@ -36,8 +36,16 @@ layout(std140, binding = 1) uniform PerDraw {
     int uFogEnabled;            // offset 60
     int uLightingEnabled;       // offset 64
     int uUseLightMapTexture;    // offset 68
-    int _pad0;                  // offset 72
-    int _pad1;                  // offset 76
+    int uTexEnvMode;            // offset 72
+    int uTexGenEnabled;         // offset 76 (bitmask: bit0=S, bit1=T)
+    vec4 uTexGenEyePlaneS;      // offset 80
+    vec4 uTexGenEyePlaneT;      // offset 96
+    vec4 uTexGenObjectPlaneS;   // offset 112
+    vec4 uTexGenObjectPlaneT;   // offset 128
+    int uTexGenSMode;           // offset 144
+    int uTexGenTMode;           // offset 148
+    int _pad0;                  // offset 152
+    int _pad1;                  // offset 156
 };
 
 out vec4 vColor;
@@ -48,6 +56,9 @@ out float vFogDist;
 
 void main() {
     gl_Position = uModelViewProjection * vec4(aPosition, 1.0);
+
+    vec4 eyePos = uModelView * vec4(aPosition, 1.0);
+    vec4 objPos = vec4(aPosition, 1.0);
 
     // Color always comes from the attribute. When vertex color is not in the
     // buffer, the draw handler sets glVertexAttrib4f to the current glColor4f.
@@ -78,13 +89,42 @@ void main() {
 
     vColor = baseColor;
 
-    // TexCoord always from attribute. Default is (0,0) when not in buffer.
-    vTexCoord = aTexCoord;
+    // TexCoord — start from attribute, then apply TexGen if enabled
+    vec2 tc = aTexCoord;
+
+    // TexGen S coordinate
+    if ((uTexGenEnabled & 1) != 0) {
+        // GL_OBJECT_LINEAR=0x2401, GL_EYE_LINEAR=0x2400, GL_SPHERE_MAP=0x2402
+        if (uTexGenSMode == 0x2401) {
+            tc.s = dot(objPos, uTexGenObjectPlaneS);
+        } else if (uTexGenSMode == 0x2400) {
+            tc.s = dot(eyePos, uTexGenEyePlaneS);
+        } else if (uTexGenSMode == 0x2402) {
+            // Sphere map: reflection-based
+            vec3 r = reflect(-normalize(eyePos.xyz), normalize(hasRealNormal ? eyeNormal : vec3(0,0,1)));
+            float m = 2.0 * sqrt(r.x*r.x + r.y*r.y + (r.z+1.0)*(r.z+1.0));
+            tc.s = r.x / m + 0.5;
+        }
+    }
+
+    // TexGen T coordinate
+    if ((uTexGenEnabled & 2) != 0) {
+        if (uTexGenTMode == 0x2401) {
+            tc.t = dot(objPos, uTexGenObjectPlaneT);
+        } else if (uTexGenTMode == 0x2400) {
+            tc.t = dot(eyePos, uTexGenEyePlaneT);
+        } else if (uTexGenTMode == 0x2402) {
+            vec3 r = reflect(-normalize(eyePos.xyz), normalize(hasRealNormal ? eyeNormal : vec3(0,0,1)));
+            float m = 2.0 * sqrt(r.x*r.x + r.y*r.y + (r.z+1.0)*(r.z+1.0));
+            tc.t = r.y / m + 0.5;
+        }
+    }
+
+    vTexCoord = tc;
 
     // Lightmap always passed through; fragment shader checks uLightMapEnabled.
     vLightMap = aLightMap;
 
     // Fog distance (eye-space Z)
-    vec4 eyePos = uModelView * vec4(aPosition, 1.0);
     vFogDist = length(eyePos.xyz);
 }

@@ -65,9 +65,17 @@ public final class CoreShaderProgram {
     //   int   uFogEnabled            offset 60
     //   int   uLightingEnabled       offset 64
     //   int   uUseLightMapTexture    offset 68
-    //   int   _pad0                  offset 72
-    //   int   _pad1                  offset 76
-    private static final int PD_SIZE = 80;
+    //   int   uTexEnvMode            offset 72
+    //   int   uTexGenEnabled          offset 76  (bitmask: bit0=S, bit1=T)
+    //   vec4  uTexGenEyePlaneS        offset 80
+    //   vec4  uTexGenEyePlaneT        offset 96
+    //   vec4  uTexGenObjectPlaneS     offset 112
+    //   vec4  uTexGenObjectPlaneT     offset 128
+    //   int   uTexGenSMode            offset 144
+    //   int   uTexGenTMode            offset 148
+    //   int   _pad0                   offset 152
+    //   int   _pad1                   offset 156
+    private static final int PD_SIZE = 160;
     private final ByteBuffer pdBuf = ByteBuffer.allocateDirect(PD_SIZE).order(ByteOrder.nativeOrder());
 
     private final org.joml.Matrix4f cachedMVP = new org.joml.Matrix4f();
@@ -215,6 +223,11 @@ public final class CoreShaderProgram {
                     state.getLightmapX(), state.getLightmapY(),
                     hasLightMap, (!hasLightMap && state.isTexture2DEnabled(1)) ? 1 : 0, hasNormal, hasColor);
             }
+
+            ms.clearModelViewDirty();
+            ms.clearProjectionDirty();
+            lastMvDirty = mvDirty;
+            lastProjDirty = projDirty;
         }
 
         // ── PerDraw UBO: fog, alpha test, state flags ──
@@ -238,8 +251,24 @@ public final class CoreShaderProgram {
             pdBuf.putInt(60, state.isFogEnabled() ? 1 : 0);
             pdBuf.putInt(64, state.isLightingEnabled() ? 1 : 0);
             pdBuf.putInt(68, ulmt);
-            pdBuf.putInt(72, 0);
-            pdBuf.putInt(76, 0);
+            pdBuf.putInt(72, state.getTexEnvMode());
+            int texGenBits = (state.isTexGenEnabled(0) ? 1 : 0) | (state.isTexGenEnabled(1) ? 2 : 0)
+                    | (state.isTexGenEnabled(2) ? 4 : 0) | (state.isTexGenEnabled(3) ? 8 : 0);
+            pdBuf.putInt(76, texGenBits);
+            // TexGen eye planes (S and T)
+            float[] eyeS = state.getTexGenEyePlane(0);
+            pdBuf.putFloat(80, eyeS[0]); pdBuf.putFloat(84, eyeS[1]); pdBuf.putFloat(88, eyeS[2]); pdBuf.putFloat(92, eyeS[3]);
+            float[] eyeT = state.getTexGenEyePlane(1);
+            pdBuf.putFloat(96, eyeT[0]); pdBuf.putFloat(100, eyeT[1]); pdBuf.putFloat(104, eyeT[2]); pdBuf.putFloat(108, eyeT[3]);
+            // TexGen object planes (S and T)
+            float[] objS = state.getTexGenObjectPlane(0);
+            pdBuf.putFloat(112, objS[0]); pdBuf.putFloat(116, objS[1]); pdBuf.putFloat(120, objS[2]); pdBuf.putFloat(124, objS[3]);
+            float[] objT = state.getTexGenObjectPlane(1);
+            pdBuf.putFloat(128, objT[0]); pdBuf.putFloat(132, objT[1]); pdBuf.putFloat(136, objT[2]); pdBuf.putFloat(140, objT[3]);
+            pdBuf.putInt(144, state.getTexGenMode(0));
+            pdBuf.putInt(148, state.getTexGenMode(1));
+            pdBuf.putInt(152, 0);
+            pdBuf.putInt(156, 0);
 
             pdBuf.position(0).limit(PD_SIZE);
             GL45.glNamedBufferSubData(perDrawUbo, 0, pdBuf);
