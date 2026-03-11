@@ -1,6 +1,7 @@
 {
   "required": true,
   "package": "com.github.gl46core.mixin",
+  "plugin": "com.github.gl46core.core.GL46CoreMixinPlugin",
   "compatibilityLevel": "JAVA_17",
   "target": "@env(DEFAULT)",
   "client": [
