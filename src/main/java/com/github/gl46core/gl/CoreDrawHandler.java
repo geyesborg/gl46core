@@ -173,16 +173,20 @@ public final class CoreDrawHandler {
 
         // Draw — convert GL_QUADS to GL_TRIANGLES since quads are removed in core profile
         int drawMode = bufferBuilder.getDrawMode();
-        if (drawMode == GL11.GL_QUADS) {
-            int quadCount = vertexCount / 4;
-            int indexCount = quadCount * 6;
+        try {
+            if (drawMode == GL11.GL_QUADS) {
+                int quadCount = vertexCount / 4;
+                int indexCount = quadCount * 6;
 
-            int ebo = QuadIndexBuffer.ensure(quadCount);
-            GL45.glVertexArrayElementBuffer(vao, ebo);
+                int ebo = QuadIndexBuffer.ensure(quadCount);
+                GL45.glVertexArrayElementBuffer(vao, ebo);
 
-            GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
-        } else {
-            GL11.glDrawArrays(drawMode, 0, vertexCount);
+                GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
+            } else {
+                GL11.glDrawArrays(drawMode, 0, vertexCount);
+            }
+        } catch (Throwable t) {
+            com.github.gl46core.GL46Core.LOGGER.error("Exception during draw:", t);
         }
 
         bufferBuilder.reset();

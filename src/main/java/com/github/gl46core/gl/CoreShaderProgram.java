@@ -160,6 +160,11 @@ public final class CoreShaderProgram {
     public void bind(boolean hasColor, boolean hasTexCoord, boolean hasNormal, boolean hasLightMap) {
         if (programId == 0) return;
 
+        // Ensure this thread starts with correct default state (texture2D enabled).
+        // Modern Splash's thread can leave texture2DEnabled[0]=false in the shared
+        // CoreStateTracker before the Client thread starts rendering.
+        CoreStateTracker.INSTANCE.ensureThreadDefaults();
+
         GL20.glUseProgram(programId);
 
         // Ensure UBO binding points are set for this context.

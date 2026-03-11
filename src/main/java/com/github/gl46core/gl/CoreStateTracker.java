@@ -43,11 +43,29 @@ public final class CoreStateTracker {
 
     public int getGeneration() { return generation; }
 
+    // Track which threads have had their default state initialized
+    private final java.util.concurrent.ConcurrentHashMap<Long, Boolean> initializedThreads = new java.util.concurrent.ConcurrentHashMap<>();
+
     private CoreStateTracker() {
         attribStack = new AttribSnapshot[ATTRIB_STACK_DEPTH];
         for (int i = 0; i < ATTRIB_STACK_DEPTH; i++) attribStack[i] = new AttribSnapshot();
         // Default: texture unit 0 enabled
         texture2DEnabled[0] = true;
+    }
+
+    /**
+     * Called before each draw to ensure the current thread starts with
+     * correct default state. Needed because Modern Splash's thread can
+     * leave texture2DEnabled[0]=false in this shared singleton before
+     * the Client thread starts rendering.
+     */
+    public void ensureThreadDefaults() {
+        long tid = Thread.currentThread().getId();
+        if (initializedThreads.putIfAbsent(tid, Boolean.TRUE) == null) {
+            // First draw on this thread — reset to OpenGL defaults
+            texture2DEnabled[0] = true;
+            generation++;
+        }
     }
 
     public void pushAttrib() {

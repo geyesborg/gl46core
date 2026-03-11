@@ -1,5 +1,6 @@
 package com.github.gl46core.mixin;
 
+import com.github.gl46core.gl.CoreStateTracker;
 import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
@@ -49,6 +50,11 @@ public abstract class MixinBooleanState {
      */
     @Overwrite
     public void func_179200_b() { // setEnabled
+        if (field_179202_a == 0x0DE1) { // GL_TEXTURE_2D
+            CoreStateTracker.INSTANCE.enableTexture2D(
+                    CoreStateTracker.INSTANCE.getActiveTextureUnit());
+            return;
+        }
         if (isCoreCapability()) {
             if (!cacheInitialized || !cachedState) {
                 GL11.glEnable(field_179202_a);
@@ -64,6 +70,11 @@ public abstract class MixinBooleanState {
      */
     @Overwrite
     public void func_179198_a() { // setDisabled
+        if (field_179202_a == 0x0DE1) { // GL_TEXTURE_2D
+            CoreStateTracker.INSTANCE.disableTexture2D(
+                    CoreStateTracker.INSTANCE.getActiveTextureUnit());
+            return;
+        }
         if (isCoreCapability()) {
             if (!cacheInitialized || cachedState) {
                 GL11.glDisable(field_179202_a);
@@ -79,6 +90,13 @@ public abstract class MixinBooleanState {
      */
     @Overwrite
     public void func_179199_a(boolean enabled) { // setState
+        if (field_179202_a == 0x0DE1) { // GL_TEXTURE_2D
+            if (enabled) CoreStateTracker.INSTANCE.enableTexture2D(
+                    CoreStateTracker.INSTANCE.getActiveTextureUnit());
+            else CoreStateTracker.INSTANCE.disableTexture2D(
+                    CoreStateTracker.INSTANCE.getActiveTextureUnit());
+            return;
+        }
         if (isCoreCapability()) {
             if (!cacheInitialized || cachedState != enabled) {
                 if (enabled) GL11.glEnable(field_179202_a);
