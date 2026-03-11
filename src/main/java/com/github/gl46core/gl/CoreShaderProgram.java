@@ -88,6 +88,10 @@ public final class CoreShaderProgram {
     private boolean lastProjDirty = true;
     private int lastFormatFlags = -1;
 
+    // Track which thread last bound UBOs — shared GL contexts don't share
+    // buffer base bindings, so we must re-bind when the context changes.
+    private volatile long lastBoundThread = -1;
+
     public static void endFrame() {
         CoreTextureTracker.flushPendingDeletes();
     }
@@ -137,8 +141,9 @@ public final class CoreShaderProgram {
         GL45.glNamedBufferStorage(perFrameUbo, PF_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
         GL45.glNamedBufferStorage(perDrawUbo, PD_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
 
-        GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, perFrameUbo);
-        GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 1, perDrawUbo);
+        // NOTE: glBindBufferBase is per-context state and is NOT shared between
+        // GL contexts. We bind in bind() instead, so splash threads with
+        // SharedDrawable contexts also get the UBO binding points.
 
         GL46Core.LOGGER.info("Core shader program compiled and linked (id={}) with DSA UBOs (pf={}, pd={})",
             programId, perFrameUbo, perDrawUbo);
@@ -156,6 +161,21 @@ public final class CoreShaderProgram {
         if (programId == 0) return;
 
         GL20.glUseProgram(programId);
+
+        // Ensure UBO binding points are set for this context.
+        // glBindBufferBase is per-context state — shared GL contexts
+        // (e.g. Modern Splash's SharedDrawable) don't inherit these.
+        long currentThread = Thread.currentThread().getId();
+        if (currentThread != lastBoundThread) {
+            GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, perFrameUbo);
+            GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 1, perDrawUbo);
+            lastBoundThread = currentThread;
+            // Force full re-upload on context switch
+            lastStateGeneration = -1;
+            lastMvDirty = true;
+            lastProjDirty = true;
+            lastFormatFlags = -1;
+        }
 
         CoreMatrixStack ms = CoreMatrixStack.INSTANCE;
         CoreStateTracker state = CoreStateTracker.INSTANCE;

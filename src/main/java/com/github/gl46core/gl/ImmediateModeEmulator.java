@@ -43,8 +43,10 @@ public final class ImmediateModeEmulator {
     private float colR = 1, colG = 1, colB = 1, colA = 1;
     private float normX = 0, normY = 0, normZ = 1;
 
-    private static int vao = 0;
-    private static int vbo = 0;
+    // VAOs are per-context (NOT shared between GL contexts), so each thread
+    // that has its own context (e.g. Modern Splash's SharedDrawable) needs its own VAO.
+    // VBOs ARE shared, but we use per-thread VBOs too for simplicity.
+    private static final ThreadLocal<int[]> threadVaoVbo = ThreadLocal.withInitial(() -> new int[]{0, 0});
 
     private ImmediateModeEmulator() {
         buffer = ByteBuffer.allocateDirect(MAX_VERTICES * VERTEX_SIZE)
@@ -111,20 +113,21 @@ public final class ImmediateModeEmulator {
 
         CoreShaderProgram.INSTANCE.ensureInitialized();
 
-        if (vao == 0) {
+        int[] ids = threadVaoVbo.get();
+        if (ids[0] == 0) {
             int[] vaos = new int[1];
             GL45.glCreateVertexArrays(vaos);
-            vao = vaos[0];
+            ids[0] = vaos[0];
         }
-        if (vbo == 0) {
+        if (ids[1] == 0) {
             int[] bufs = new int[1];
             GL45.glCreateBuffers(bufs);
-            vbo = bufs[0];
+            ids[1] = bufs[0];
         }
 
-        GL30.glBindVertexArray(vao);
+        GL30.glBindVertexArray(ids[0]);
         CoreVboDrawHandler.setTerrainVaoUnbound();
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, ids[1]);
 
         // GL_QUADS is removed in core profile — convert to GL_TRIANGLES
         int actualMode = drawMode;
