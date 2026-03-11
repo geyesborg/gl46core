@@ -31,15 +31,9 @@ public class GL46CorePlugin implements IFMLLoadingPlugin {
 
     @Override
     public void injectData(Map<String, Object> data) {
-        // Force core profile GL context — lwjglxx reads this before Display.create()
-        try {
-            Class<?> cfg = Class.forName("net.minecraftforge.common.ForgeEarlyConfig");
-            java.lang.reflect.Field f = cfg.getDeclaredField("OPENGL_COMPAT_PROFILE");
-            f.setAccessible(true);
-            f.setBoolean(null, false);
-        } catch (Exception e) {
-            // Not running on Cleanroom — ignore
-        }
+        // Core profile is now requested via MixinDisplay (transient GLFW window hints).
+        // We no longer touch ForgeEarlyConfig — that wrote to forge_early.cfg on disk,
+        // leaving Minecraft permanently in core profile mode even after mod removal.
     }
 
     @Override

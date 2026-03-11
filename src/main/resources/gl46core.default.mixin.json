@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_17",
   "target": "@env(DEFAULT)",
   "client": [
+    "MixinDisplay",
     "MixinGlStateManager",
     "MixinBooleanState",
     "MixinWorldVertexBufferUploader",
