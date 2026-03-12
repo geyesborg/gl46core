@@ -35,6 +35,8 @@ public final class CoreStateTracker {
         int texEnvMode;
         boolean[] texGenEnabled = new boolean[4];
         int[] texGenMode = new int[4];
+        boolean[] clipPlaneEnabled = new boolean[6];
+        float[][] clipPlaneEquation = new float[6][4];
     }
 
     // Generation counter — increments on every state mutation.
@@ -91,6 +93,8 @@ public final class CoreStateTracker {
         s.texEnvMode = texEnvMode;
         System.arraycopy(texGenEnabled, 0, s.texGenEnabled, 0, 4);
         System.arraycopy(texGenMode, 0, s.texGenMode, 0, 4);
+        System.arraycopy(clipPlaneEnabled, 0, s.clipPlaneEnabled, 0, 6);
+        for (int i = 0; i < 6; i++) System.arraycopy(clipPlaneEquation[i], 0, s.clipPlaneEquation[i], 0, 4);
         attribStack[attribStackPointer++] = s;
     }
 
@@ -117,6 +121,8 @@ public final class CoreStateTracker {
         texEnvMode = s.texEnvMode;
         System.arraycopy(s.texGenEnabled, 0, texGenEnabled, 0, 4);
         System.arraycopy(s.texGenMode, 0, texGenMode, 0, 4);
+        System.arraycopy(s.clipPlaneEnabled, 0, clipPlaneEnabled, 0, 6);
+        for (int i = 0; i < 6; i++) System.arraycopy(s.clipPlaneEquation[i], 0, clipPlaneEquation[i], 0, 4);
         generation++;
     }
 
@@ -227,7 +233,7 @@ public final class CoreStateTracker {
     // ── Color ───────────────────────────────────────────────────────────
 
     public void color(float r, float g, float b, float a) { colorR = r; colorG = g; colorB = b; colorA = a; generation++; }
-    public void resetColor() { colorR = -1.0f; colorG = -1.0f; colorB = -1.0f; colorA = -1.0f; generation++; }
+    public void resetColor() { colorR = 1.0f; colorG = 1.0f; colorB = 1.0f; colorA = 1.0f; generation++; }
     public float getColorR() { return colorR; }
     public float getColorG() { return colorG; }
     public float getColorB() { return colorB; }
@@ -243,13 +249,16 @@ public final class CoreStateTracker {
 
     public void enableNormalize() { normalizeEnabled = true; generation++; }
     public void disableNormalize() { normalizeEnabled = false; generation++; }
+    public boolean isNormalizeEnabled() { return normalizeEnabled; }
     public void enableRescaleNormal() { rescaleNormalEnabled = true; generation++; }
     public void disableRescaleNormal() { rescaleNormalEnabled = false; generation++; }
+    public boolean isRescaleNormalEnabled() { return rescaleNormalEnabled; }
 
     // ── Color material ──────────────────────────────────────────────────
 
     public void enableColorMaterial() { colorMaterialEnabled = true; generation++; }
     public void disableColorMaterial() { colorMaterialEnabled = false; generation++; }
+    public boolean isColorMaterialEnabled() { return colorMaterialEnabled; }
 
     // ── Shade model ─────────────────────────────────────────────────────
 
@@ -313,4 +322,22 @@ public final class CoreStateTracker {
         if (coord >= 0 && coord < 4) { texGenEyePlane[coord][0] = a; texGenEyePlane[coord][1] = b; texGenEyePlane[coord][2] = c; texGenEyePlane[coord][3] = d; generation++; }
     }
     public float[] getTexGenEyePlane(int coord) { return coord >= 0 && coord < 4 ? texGenEyePlane[coord] : new float[4]; }
+
+    // ── Clip planes (replaces glClipPlane / glEnable(GL_CLIP_PLANEn)) ──
+    // In core profile, these are implemented via gl_ClipDistance[n] in the vertex shader.
+    // The plane equation is in eye space (transformed by modelview at the time of glClipPlane call).
+    private final boolean[] clipPlaneEnabled = new boolean[6];
+    private final float[][] clipPlaneEquation = new float[6][4];
+
+    public void enableClipPlane(int plane) { if (plane >= 0 && plane < 6) { clipPlaneEnabled[plane] = true; generation++; } }
+    public void disableClipPlane(int plane) { if (plane >= 0 && plane < 6) { clipPlaneEnabled[plane] = false; generation++; } }
+    public boolean isClipPlaneEnabled(int plane) { return plane >= 0 && plane < 6 && clipPlaneEnabled[plane]; }
+    public void setClipPlaneEquation(int plane, float a, float b, float c, float d) {
+        if (plane >= 0 && plane < 6) {
+            clipPlaneEquation[plane][0] = a; clipPlaneEquation[plane][1] = b;
+            clipPlaneEquation[plane][2] = c; clipPlaneEquation[plane][3] = d;
+            generation++;
+        }
+    }
+    public float[] getClipPlaneEquation(int plane) { return plane >= 0 && plane < 6 ? clipPlaneEquation[plane] : new float[4]; }
 }

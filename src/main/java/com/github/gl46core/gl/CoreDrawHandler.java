@@ -27,7 +27,6 @@ public final class CoreDrawHandler {
     private static int vbo = 0;
     private static int vboCapacity = 0;
     private static VertexFormat lastFormat = null;
-
     private CoreDrawHandler() {}
 
     /**

@@ -11,21 +11,27 @@ import java.util.Map;
  * GlStateManager to LegacyGLRedirects.
  *
  * Covers:
- * - Matrix:        glMatrixMode, glPushMatrix, glPopMatrix, glLoadIdentity, glMultMatrix,
- *                  glLoadMatrix, glTranslatef/d, glRotatef/d, glScalef/d, glOrtho, glFrustum
+ * - Matrix:        glMatrixMode, glPushMatrix, glPopMatrix, glLoadIdentity, glMultMatrix(f/d),
+ *                  glLoadMatrix(f/d), glTranslatef/d, glRotatef/d, glScalef/d, glOrtho, glFrustum
  * - Enable/Disable: glEnable, glDisable (runtime filter for legacy vs core caps)
  * - Color:         glColor3f/3d/3ub/4f/4d/4ub
- * - Immediate:     glBegin, glEnd, glVertex2f/2d/2i/3f/3d, glTexCoord2f/2d,
- *                  glNormal3f/3d/3i/3b
+ * - Immediate:     glBegin, glEnd, glVertex2f/2d/2i/3f/3d/3i/4f/4d, glTexCoord2f/2d,
+ *                  glNormal3f/3d/3i/3b, glRectf/i/d
  * - State:         glAlphaFunc, glShadeModel, glColorMaterial
  * - Fog:           glFogf, glFogi, glFogfv
- * - Lighting:      glLightfv, glLightModelfv
- * - Texture:       glTexEnvi, glTexEnvf, glTexEnvfv, glActiveTexture
- * - Display lists: glCallList, glGenLists, glNewList, glEndList, glDeleteLists
+ * - Lighting:      glLightfv, glLightf, glLightModelfv
+ * - Material:      glMaterialfv, glMaterialf, glMateriali (no-ops)
+ * - Texture:       glTexEnvi, glTexEnvf, glTexEnvfv, glActiveTexture, glMultiTexCoord2f,
+ *                  glTexGeni, glTexGenfv, glTexGendv
+ * - Tex upload:    glTexImage2D (ByteBuffer/IntBuffer), glTexSubImage2D (ByteBuffer/IntBuffer)
+ * - Display lists: glCallList, glGenLists, glNewList, glEndList, glDeleteLists,
+ *                  glListBase, glCallLists
  * - Attrib stack:  glPushAttrib, glPopAttrib
  * - Client state:  glEnableClientState, glDisableClientState
- * - Queries:       glGetFloatv (matrix queries)
- * - GLU:           gluPerspective, gluLookAt
+ * - Clip planes:   glClipPlane
+ * - Queries:       glGetFloatv, glGetIntegerv, glGetDoublev, glGetInteger, glIsEnabled
+ * - Pixel ops:     glRasterPos, glBitmap, glDrawPixels, glPixelTransfer, glPixelZoom (no-ops)
+ * - GLU:           gluPerspective, gluLookAt, gluProject, gluUnProject
  *
  * Excludes: gl46core itself, LWJGL, ASM, Mixin, Java stdlib, Cleanroom internals.
  */
@@ -64,6 +70,9 @@ public class LegacyGLTransformer implements IClassTransformer {
         String GL11 = "org/lwjgl/opengl/GL11";
         String GL13 = "org/lwjgl/opengl/GL13";
         String FB = "Ljava/nio/FloatBuffer;";
+        String DB = "Ljava/nio/DoubleBuffer;";
+        String IB = "Ljava/nio/IntBuffer;";
+        String BB = "Ljava/nio/ByteBuffer;";
 
         // ── Matrix operations ─────────────────────────────────────────
         table.put(new CallKey(GL11, "glMatrixMode", "(I)V"),       new Redirect("glMatrixMode"));
@@ -71,7 +80,9 @@ public class LegacyGLTransformer implements IClassTransformer {
         table.put(new CallKey(GL11, "glPopMatrix", "()V"),         new Redirect("glPopMatrix"));
         table.put(new CallKey(GL11, "glLoadIdentity", "()V"),      new Redirect("glLoadIdentity"));
         table.put(new CallKey(GL11, "glMultMatrix", "(" + FB + ")V"), new Redirect("glMultMatrix"));
+        table.put(new CallKey(GL11, "glMultMatrix", "(" + DB + ")V"), new Redirect("glMultMatrixd"));
         table.put(new CallKey(GL11, "glLoadMatrix", "(" + FB + ")V"), new Redirect("glLoadMatrix"));
+        table.put(new CallKey(GL11, "glLoadMatrix", "(" + DB + ")V"), new Redirect("glLoadMatrixd"));
         table.put(new CallKey(GL11, "glTranslatef", "(FFF)V"),     new Redirect("glTranslatef"));
         table.put(new CallKey(GL11, "glTranslated", "(DDD)V"),     new Redirect("glTranslated"));
         table.put(new CallKey(GL11, "glRotatef", "(FFFF)V"),       new Redirect("glRotatef"));
@@ -105,6 +116,9 @@ public class LegacyGLTransformer implements IClassTransformer {
         table.put(new CallKey(GL11, "glVertex3d", "(DDD)V"),       new Redirect("glVertex3d"));
         table.put(new CallKey(GL11, "glVertex2d", "(DD)V"),        new Redirect("glVertex2d"));
         table.put(new CallKey(GL11, "glVertex2i", "(II)V"),        new Redirect("glVertex2i"));
+        table.put(new CallKey(GL11, "glVertex3i", "(III)V"),       new Redirect("glVertex3i"));
+        table.put(new CallKey(GL11, "glVertex4f", "(FFFF)V"),      new Redirect("glVertex4f"));
+        table.put(new CallKey(GL11, "glVertex4d", "(DDDD)V"),      new Redirect("glVertex4d"));
         table.put(new CallKey(GL11, "glTexCoord2f", "(FF)V"),      new Redirect("glTexCoord2f"));
         table.put(new CallKey(GL11, "glTexCoord2d", "(DD)V"),      new Redirect("glTexCoord2d"));
         table.put(new CallKey(GL11, "glNormal3f", "(FFF)V"),       new Redirect("glNormal3f"));
@@ -112,12 +126,19 @@ public class LegacyGLTransformer implements IClassTransformer {
         table.put(new CallKey(GL11, "glNormal3i", "(III)V"),       new Redirect("glNormal3i"));
         table.put(new CallKey(GL11, "glNormal3b", "(BBB)V"),       new Redirect("glNormal3b"));
 
+        // ── Rectangle (removed — emulate via immediate mode) ──────────
+        table.put(new CallKey(GL11, "glRectf", "(FFFF)V"),        new Redirect("glRectf"));
+        table.put(new CallKey(GL11, "glRecti", "(IIII)V"),        new Redirect("glRecti"));
+        table.put(new CallKey(GL11, "glRectd", "(DDDD)V"),        new Redirect("glRectd"));
+
         // ── Display lists (emulated via VAO/VBO in LegacyGLRedirects) ──
         table.put(new CallKey(GL11, "glCallList", "(I)V"),         new Redirect("glCallList"));
         table.put(new CallKey(GL11, "glGenLists", "(I)I"),         new Redirect("glGenLists"));
         table.put(new CallKey(GL11, "glNewList", "(II)V"),         new Redirect("glNewList"));
         table.put(new CallKey(GL11, "glEndList", "()V"),           new Redirect("glEndList"));
         table.put(new CallKey(GL11, "glDeleteLists", "(II)V"),     new Redirect("glDeleteLists"));
+        table.put(new CallKey(GL11, "glListBase", "(I)V"),         new Redirect("glListBase"));
+        table.put(new CallKey(GL11, "glCallLists", "(" + IB + ")V"), new Redirect("glCallLists"));
 
         // ── Attribute stack ───────────────────────────────────────────
         table.put(new CallKey(GL11, "glPushAttrib", "(I)V"),       new Redirect("glPushAttrib"));
@@ -130,7 +151,13 @@ public class LegacyGLTransformer implements IClassTransformer {
 
         // ── Lighting ──────────────────────────────────────────────────
         table.put(new CallKey(GL11, "glLightfv", "(II" + FB + ")V"), new Redirect("glLightfv"));
+        table.put(new CallKey(GL11, "glLightf", "(IIF)V"),         new Redirect("glLightf"));
         table.put(new CallKey(GL11, "glLightModelfv", "(I" + FB + ")V"), new Redirect("glLightModelfv"));
+
+        // ── Material (no-op — shader handles lighting differently) ───
+        table.put(new CallKey(GL11, "glMaterialfv", "(II" + FB + ")V"), Redirect.deprecated("glMaterialfv", "Material"));
+        table.put(new CallKey(GL11, "glMaterialf", "(IIF)V"),      Redirect.deprecated("glMaterialf", "Material"));
+        table.put(new CallKey(GL11, "glMateriali", "(III)V"),       Redirect.deprecated("glMateriali", "Material"));
 
         // ── Texture environment (no-op — shader uses GL_MODULATE behavior) ──
         table.put(new CallKey(GL11, "glTexEnvi", "(III)V"),        Redirect.deprecated("glTexEnvi", "Texture Environment"));
@@ -144,15 +171,46 @@ public class LegacyGLTransformer implements IClassTransformer {
         table.put(new CallKey(GL11, "glEnableClientState", "(I)V"),  new Redirect("glEnableClientState"));
         table.put(new CallKey(GL11, "glDisableClientState", "(I)V"), new Redirect("glDisableClientState"));
 
+        // ── TexGen (removed — emulated via CoreStateTracker) ──────────
+        table.put(new CallKey(GL11, "glTexGeni", "(III)V"),        new Redirect("glTexGeni"));
+        table.put(new CallKey(GL11, "glTexGenfv", "(II" + FB + ")V"), new Redirect("glTexGenfv"));
+        table.put(new CallKey(GL11, "glTexGendv", "(II" + DB + ")V"), new Redirect("glTexGendv"));
+
+        // ── Texture image upload (convert deprecated GL_ALPHA/GL_LUMINANCE formats) ──
+        table.put(new CallKey(GL11, "glTexImage2D", "(IIIIIIII" + BB + ")V"), new Redirect("glTexImage2D"));
+        table.put(new CallKey(GL11, "glTexImage2D", "(IIIIIIII" + IB + ")V"),  new Redirect("glTexImage2D_IntBuffer", "(IIIIIIII" + IB + ")V"));
+        table.put(new CallKey(GL11, "glTexSubImage2D", "(IIIIIIII" + BB + ")V"), new Redirect("glTexSubImage2D"));
+        table.put(new CallKey(GL11, "glTexSubImage2D", "(IIIIIIII" + IB + ")V"), new Redirect("glTexSubImage2D_IntBuffer", "(IIIIIIII" + IB + ")V"));
+
         // ── Texture bind / delete (deferred deletion for core-profile safety) ──
         table.put(new CallKey(GL11, "glBindTexture", "(II)V"),     new Redirect("glBindTexture"));
         table.put(new CallKey(GL11, "glDeleteTextures", "(I)V"),   new Redirect("glDeleteTextures"));
 
-        // ── Active texture (GL13) ─────────────────────────────────────
+        // ── Active texture / multi-texcoord (GL13) ─────────────────────
         table.put(new CallKey(GL13, "glActiveTexture", "(I)V"),    new Redirect("glActiveTexture"));
+        table.put(new CallKey(GL13, "glMultiTexCoord2f", "(IFF)V"), new Redirect("glMultiTexCoord2f"));
 
-        // ── Matrix queries ────────────────────────────────────────────
+        // ── State queries (intercept removed-state queries) ──────────
         table.put(new CallKey(GL11, "glGetFloatv", "(I" + FB + ")V"), new Redirect("glGetFloatv"));
+        table.put(new CallKey(GL11, "glGetIntegerv", "(I" + IB + ")V"), new Redirect("glGetIntegerv"));
+        table.put(new CallKey(GL11, "glGetDoublev", "(I" + DB + ")V"), new Redirect("glGetDoublev"));
+        table.put(new CallKey(GL11, "glGetInteger", "(I)I"),       new Redirect("glGetInteger"));
+        table.put(new CallKey(GL11, "glIsEnabled", "(I)Z"),        new Redirect("glIsEnabled"));
+
+        // ── Clip planes (removed — emulated via CoreStateTracker) ────
+        table.put(new CallKey(GL11, "glClipPlane", "(I" + DB + ")V"), new Redirect("glClipPlane"));
+
+        // ── Pixel operations (removed in core — no-ops) ─────────────
+        table.put(new CallKey(GL11, "glRasterPos2f", "(FF)V"),     Redirect.deprecated("glRasterPos2f", "Raster Position"));
+        table.put(new CallKey(GL11, "glRasterPos2d", "(DD)V"),     Redirect.deprecated("glRasterPos2d", "Raster Position"));
+        table.put(new CallKey(GL11, "glRasterPos2i", "(II)V"),     Redirect.deprecated("glRasterPos2i", "Raster Position"));
+        table.put(new CallKey(GL11, "glRasterPos3f", "(FFF)V"),    Redirect.deprecated("glRasterPos3f", "Raster Position"));
+        table.put(new CallKey(GL11, "glRasterPos3d", "(DDD)V"),    Redirect.deprecated("glRasterPos3d", "Raster Position"));
+        table.put(new CallKey(GL11, "glBitmap", "(IIFFFF" + BB + ")V"), Redirect.deprecated("glBitmap", "Bitmap"));
+        table.put(new CallKey(GL11, "glDrawPixels", "(IIII" + BB + ")V"), Redirect.deprecated("glDrawPixels", "DrawPixels"));
+        table.put(new CallKey(GL11, "glPixelTransferf", "(IF)V"),  Redirect.deprecated("glPixelTransferf", "Pixel Transfer"));
+        table.put(new CallKey(GL11, "glPixelTransferi", "(II)V"),  Redirect.deprecated("glPixelTransferi", "Pixel Transfer"));
+        table.put(new CallKey(GL11, "glPixelZoom", "(FF)V"),       Redirect.deprecated("glPixelZoom", "Pixel Zoom"));
 
         // ── GLU / Project ─────────────────────────────────────────────
         table.put(new CallKey("org/lwjgl/util/glu/GLU", "gluPerspective", null),
@@ -163,6 +221,14 @@ public class LegacyGLTransformer implements IClassTransformer {
                   new Redirect("gluLookAt"));
         table.put(new CallKey("org/lwjgl/util/glu/Project", "gluLookAt", null),
                   new Redirect("gluLookAt"));
+        table.put(new CallKey("org/lwjgl/util/glu/GLU", "gluProject", null),
+                  new Redirect("gluProject"));
+        table.put(new CallKey("org/lwjgl/util/glu/Project", "gluProject", null),
+                  new Redirect("gluProject"));
+        table.put(new CallKey("org/lwjgl/util/glu/GLU", "gluUnProject", null),
+                  new Redirect("gluUnProject"));
+        table.put(new CallKey("org/lwjgl/util/glu/Project", "gluUnProject", null),
+                  new Redirect("gluUnProject"));
 
         return Map.copyOf(table);
     }

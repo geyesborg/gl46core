@@ -50,6 +50,7 @@ public final class DisplayListCache {
     private int currentListId = -1;
     private int currentMode = GL11.GL_COMPILE;
     private boolean recording = false;
+    private int listBase = 0;
 
     // Recording buffer — reused for each glBegin/glEnd during recording
     private final ByteBuffer recordBuffer = ByteBuffer.allocateDirect(MAX_VERTICES_PER_CHUNK * VERTEX_SIZE)
@@ -382,4 +383,7 @@ public final class DisplayListCache {
             lists.remove(list + i);
         }
     }
+
+    public void setListBase(int base) { listBase = base; }
+    public int getListBase() { return listBase; }
 }

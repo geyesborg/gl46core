@@ -44,8 +44,9 @@ layout(std140, binding = 1) uniform PerDraw {
     vec4 uTexGenObjectPlaneT;   // offset 128
     int uTexGenSMode;           // offset 144
     int uTexGenTMode;           // offset 148
-    int _pad0;                  // offset 152
-    int _pad1;                  // offset 156
+    int uClipPlaneEnabled;      // offset 152 (bitmask)
+    int _pad0;                  // offset 156
+    vec4 uClipPlane[6];         // offset 160 (6 * 16 = 96 bytes)
 };
 
 out vec4 vColor;
@@ -53,7 +54,6 @@ out vec2 vTexCoord;
 out vec2 vLightMap;
 out vec3 vNormal;
 out float vFogDist;
-
 void main() {
     gl_Position = uModelViewProjection * vec4(aPosition, 1.0);
 
@@ -127,4 +127,13 @@ void main() {
 
     // Fog distance (eye-space Z)
     vFogDist = length(eyePos.xyz);
+
+    // Clip planes (replaces legacy glClipPlane / GL_CLIP_PLANEn)
+    for (int i = 0; i < 6; i++) {
+        if ((uClipPlaneEnabled & (1 << i)) != 0) {
+            gl_ClipDistance[i] = dot(uClipPlane[i], eyePos);
+        } else {
+            gl_ClipDistance[i] = 1.0; // never clip
+        }
+    }
 }

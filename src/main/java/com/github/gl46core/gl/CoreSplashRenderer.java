@@ -141,6 +141,11 @@ public final class CoreSplashRenderer {
             FMLLog.log.error("Could not save the splash.properties file", e);
         }
 
+        // Override colors with ModernSplash config if present and ModernSplash is active
+        if (com.github.gl46core.core.GL46CoreMixinPlugin.isModernSplashPresent()) {
+            tryLoadModernSplashConfig(new File(Minecraft.getMinecraft().gameDir, "config/modern_splash.cfg"));
+        }
+
         mcPack = Minecraft.getMinecraft().defaultResourcePack;
         fmlPack = createResourcePack(FMLSanityChecker.fmlLocation);
         miscPack = createResourcePack(miscPackFile);
@@ -833,6 +838,106 @@ public final class CoreSplashRenderer {
         if (file.isDirectory()) return new FolderResourcePack(file);
         else if (file.isFile()) return new FileResourcePack(file);
         return null;
+    }
+
+    /**
+     * Read ModernSplash's config file (Forge Configuration format) and override
+     * our splash colors with its values. This lets gl46core's CoreSplashRenderer
+     * match ModernSplash's appearance (white text on red/dark background) without
+     * needing ModernSplash itself to be active.
+     */
+    private static void tryLoadModernSplashConfig(File cfgFile) {
+        if (!cfgFile.exists()) return;
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(cfgFile), StandardCharsets.UTF_8))) {
+            // Determine if dark mode is active based on time
+            java.time.LocalTime now = java.time.LocalTime.now();
+            int nowMinutes = now.getHour() * 100 + now.getMinute(); // HHMM format like config uses
+
+            // Parse all values first, then decide which set to use
+            int bgLight = -1, bgDark = -1;
+            int fontLight = -1, fontDark = -1;
+            int barLight = -1, barDark = -1;
+            int barBgLight = -1, barBgDark = -1;
+            int barBorderLight = -1, barBorderDark = -1;
+            int memGoodLight = -1, memGoodDark = -1;
+            int memWarnLight = -1, memWarnDark = -1;
+            int memLowLight = -1, memLowDark = -1;
+            int darkStart = 2300, darkEnd = 600;
+            boolean darkOnly = false;
+
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                // Forge config format: S:key=value or I:key=value or B:key=value
+                int eq = line.indexOf('=');
+                if (eq < 0) continue;
+                String raw = line.substring(0, eq).trim();
+                String val = line.substring(eq + 1).trim();
+                // Strip type prefix (S:, I:, B:) and surrounding quotes
+                String key = (raw.length() > 2 && raw.charAt(1) == ':') ? raw.substring(2) : raw;
+                if (key.startsWith("\"") && key.endsWith("\"")) key = key.substring(1, key.length() - 1);
+
+                try {
+                    switch (key) {
+                        case "background"       -> bgLight = Integer.decode(val);
+                        case "backgroundDark"   -> bgDark = Integer.decode(val);
+                        case "font"             -> fontLight = Integer.decode(val);
+                        case "fontDark"          -> fontDark = Integer.decode(val);
+                        case "bar"              -> barLight = Integer.decode(val);
+                        case "barDark"          -> barDark = Integer.decode(val);
+                        case "barBackground"    -> barBgLight = Integer.decode(val);
+                        case "barBackgroundDark"-> barBgDark = Integer.decode(val);
+                        case "barBorder"        -> barBorderLight = Integer.decode(val);
+                        case "barBorderDark"    -> barBorderDark = Integer.decode(val);
+                        case "memoryGood"       -> memGoodLight = Integer.decode(val);
+                        case "memoryGoodDark"   -> memGoodDark = Integer.decode(val);
+                        case "memoryWarn"       -> memWarnLight = Integer.decode(val);
+                        case "memoryWarnDark"   -> memWarnDark = Integer.decode(val);
+                        case "memoryLow"        -> memLowLight = Integer.decode(val);
+                        case "memoryLowDark"    -> memLowDark = Integer.decode(val);
+                        case "darkStartTime"    -> darkStart = Integer.parseInt(val);
+                        case "darkEndTime"      -> darkEnd = Integer.parseInt(val);
+                        case "darkModeOnly"     -> darkOnly = Boolean.parseBoolean(val);
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+
+            boolean dark = darkOnly;
+            if (!dark) {
+                // Check if current time is in dark period
+                if (darkStart > darkEnd) {
+                    // Wraps midnight: e.g. 2300-0600
+                    dark = nowMinutes >= darkStart || nowMinutes < darkEnd;
+                } else {
+                    dark = nowMinutes >= darkStart && nowMinutes < darkEnd;
+                }
+            }
+
+            // Apply colors
+            if (dark) {
+                if (bgDark >= 0)        backgroundColor = bgDark;
+                if (fontDark >= 0)       fontColor = fontDark;
+                if (barDark >= 0)        barColor = barDark;
+                if (barBgDark >= 0)      barBackgroundColor = barBgDark;
+                if (barBorderDark >= 0)  barBorderColor = barBorderDark;
+                if (memGoodDark >= 0)    memoryGoodColor = memGoodDark;
+                if (memWarnDark >= 0)    memoryWarnColor = memWarnDark;
+                if (memLowDark >= 0)     memoryLowColor = memLowDark;
+            } else {
+                if (bgLight >= 0)        backgroundColor = bgLight;
+                if (fontLight >= 0)      fontColor = fontLight;
+                if (barLight >= 0)       barColor = barLight;
+                if (barBgLight >= 0)     barBackgroundColor = barBgLight;
+                if (barBorderLight >= 0) barBorderColor = barBorderLight;
+                if (memGoodLight >= 0)   memoryGoodColor = memGoodLight;
+                if (memWarnLight >= 0)   memoryWarnColor = memWarnLight;
+                if (memLowLight >= 0)    memoryLowColor = memLowLight;
+            }
+
+            FMLLog.log.info("CoreSplashRenderer: loaded ModernSplash config (dark={})", dark);
+        } catch (IOException e) {
+            FMLLog.log.info("CoreSplashRenderer: could not read modern_splash.cfg, using defaults");
+        }
     }
 
     private static String getString(String name, String def) {

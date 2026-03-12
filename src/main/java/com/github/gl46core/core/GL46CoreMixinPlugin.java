@@ -24,6 +24,8 @@ public class GL46CoreMixinPlugin implements IMixinConfigPlugin {
     private static final Logger LOGGER = LogManager.getLogger("GL46Core");
     private static final boolean MODERN_SPLASH_PRESENT;
 
+    public static boolean isModernSplashPresent() { return MODERN_SPLASH_PRESENT; }
+
     static {
         boolean found = false;
         try {

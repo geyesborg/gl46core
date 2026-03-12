@@ -34,8 +34,9 @@ layout(std140, binding = 1) uniform PerDraw {
     vec4 uTexGenObjectPlaneT;   // offset 128
     int uTexGenSMode;           // offset 144
     int uTexGenTMode;           // offset 148
-    int _pad0;                  // offset 152
-    int _pad1;                  // offset 156
+    int uClipPlaneEnabled;      // offset 152 (bitmask)
+    int _pad0;                  // offset 156
+    vec4 uClipPlane[6];         // offset 160 (6 * 16 = 96 bytes)
 };
 
 layout(location = 0) out vec4 fragColor;   // colortex0: final lit color

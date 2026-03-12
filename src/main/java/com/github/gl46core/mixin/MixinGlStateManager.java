@@ -398,14 +398,29 @@ public abstract class MixinGlStateManager {
 
     // ═══════════════════════════════════════════════════════════════════
     // Color → CoreStateTracker + real GL
+    //
+    // Vanilla GlStateManager caches the color and skips the actual GL call
+    // when the value hasn't changed. Mods like ModernSplash rely on this:
+    // they set the real color via direct GL11.glColor3ub (which bypasses
+    // the GlStateManager cache) then FontRenderer's GlStateManager.color()
+    // gets skipped because the cache still holds the same value from a
+    // previous call.  We replicate that dirty-check here.
     // ═══════════════════════════════════════════════════════════════════
+
+    @Unique private static float gl46core$cachedR = 1.0f;
+    @Unique private static float gl46core$cachedG = 1.0f;
+    @Unique private static float gl46core$cachedB = 1.0f;
+    @Unique private static float gl46core$cachedA = 1.0f;
 
     /**
      * @author GL46Core
-     * @reason Track color in CoreStateTracker for shader uniform
+     * @reason Track color in CoreStateTracker for shader uniform (with dirty check)
      */
     @Overwrite
     public static void color(float r, float g, float b, float a) {
+        if (r == gl46core$cachedR && g == gl46core$cachedG
+                && b == gl46core$cachedB && a == gl46core$cachedA) return;
+        gl46core$cachedR = r; gl46core$cachedG = g; gl46core$cachedB = b; gl46core$cachedA = a;
         CoreStateTracker.INSTANCE.color(r, g, b, a);
         if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
             com.github.gl46core.gl.DisplayListCache.INSTANCE.syncColorFromState();
@@ -414,14 +429,11 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason Track color in CoreStateTracker for shader uniform
+     * @reason Track color in CoreStateTracker for shader uniform (with dirty check)
      */
     @Overwrite
     public static void color(float r, float g, float b) {
-        CoreStateTracker.INSTANCE.color(r, g, b, 1.0f);
-        if (com.github.gl46core.gl.DisplayListCache.INSTANCE.isRecording()) {
-            com.github.gl46core.gl.DisplayListCache.INSTANCE.syncColorFromState();
-        }
+        color(r, g, b, 1.0f);
     }
 
     /**
@@ -430,6 +442,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void resetColor() {
+        gl46core$cachedR = gl46core$cachedG = gl46core$cachedB = gl46core$cachedA = -1.0f;
         CoreStateTracker.INSTANCE.resetColor();
     }
 
@@ -808,11 +821,11 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason glTexImage2D still exists — pass through
+     * @reason Convert deprecated GL_ALPHA/GL_LUMINANCE formats for core profile
      */
     @Overwrite
     public static void glTexImage2D(int target, int level, int internalFormat, int width, int height, int border, int format, int type, java.nio.IntBuffer pixels) {
-        GL11.glTexImage2D(target, level, internalFormat, width, height, border, format, type, pixels);
+        com.github.gl46core.gl.LegacyGLRedirects.glTexImage2D_IntBuffer(target, level, internalFormat, width, height, border, format, type, pixels);
     }
 
     /**

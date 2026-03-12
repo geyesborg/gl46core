@@ -68,6 +68,18 @@ public final class LegacyGLRedirects {
         }
     }
 
+    public static void glMultMatrixd(java.nio.DoubleBuffer matrix) {
+        FloatBuffer fb = org.lwjgl.BufferUtils.createFloatBuffer(16);
+        for (int i = 0; i < 16; i++) fb.put(i, (float) matrix.get(matrix.position() + i));
+        glMultMatrix(fb);
+    }
+
+    public static void glLoadMatrixd(java.nio.DoubleBuffer matrix) {
+        FloatBuffer fb = org.lwjgl.BufferUtils.createFloatBuffer(16);
+        for (int i = 0; i < 16; i++) fb.put(i, (float) matrix.get(matrix.position() + i));
+        glLoadMatrix(fb);
+    }
+
     public static void glTranslatef(float x, float y, float z) {
         if (DisplayListCache.INSTANCE.isRecording()) {
             DisplayListCache.INSTANCE.recordTranslate(x, y, z);
@@ -181,6 +193,9 @@ public final class LegacyGLRedirects {
             case 0x0C61 -> CoreStateTracker.INSTANCE.enableTexGen(1);               // GL_TEXTURE_GEN_T
             case 0x0C62 -> CoreStateTracker.INSTANCE.enableTexGen(2);               // GL_TEXTURE_GEN_R
             case 0x0C63 -> CoreStateTracker.INSTANCE.enableTexGen(3);               // GL_TEXTURE_GEN_Q
+            case 0x3000, 0x3001, 0x3002, 0x3003,                                  // GL_CLIP_PLANE0-5
+                 0x3004, 0x3005 ->
+                    CoreStateTracker.INSTANCE.enableClipPlane(cap - 0x3000);
             default -> org.lwjgl.opengl.GL11.glEnable(cap);                        // core caps pass through
         }
     }
@@ -202,6 +217,9 @@ public final class LegacyGLRedirects {
             case 0x0C61 -> CoreStateTracker.INSTANCE.disableTexGen(1);
             case 0x0C62 -> CoreStateTracker.INSTANCE.disableTexGen(2);
             case 0x0C63 -> CoreStateTracker.INSTANCE.disableTexGen(3);
+            case 0x3000, 0x3001, 0x3002, 0x3003,
+                 0x3004, 0x3005 ->
+                    CoreStateTracker.INSTANCE.disableClipPlane(cap - 0x3000);
             default -> org.lwjgl.opengl.GL11.glDisable(cap);
         }
     }
@@ -239,18 +257,18 @@ public final class LegacyGLRedirects {
     }
 
     public static void glColor4ub(byte r, byte g, byte b, byte a) {
-        CoreStateTracker.INSTANCE.color(
-                (r & 0xFF) / 255.0f, (g & 0xFF) / 255.0f,
-                (b & 0xFF) / 255.0f, (a & 0xFF) / 255.0f);
+        float fr = (r & 0xFF) / 255.0f, fg = (g & 0xFF) / 255.0f,
+              fb = (b & 0xFF) / 255.0f, fa = (a & 0xFF) / 255.0f;
+        CoreStateTracker.INSTANCE.color(fr, fg, fb, fa);
         if (DisplayListCache.INSTANCE.isRecording()) {
             DisplayListCache.INSTANCE.syncColorFromState();
         }
     }
 
     public static void glColor3ub(byte r, byte g, byte b) {
-        CoreStateTracker.INSTANCE.color(
-                (r & 0xFF) / 255.0f, (g & 0xFF) / 255.0f,
-                (b & 0xFF) / 255.0f, 1.0f);
+        float fr = (r & 0xFF) / 255.0f, fg = (g & 0xFF) / 255.0f,
+              fb = (b & 0xFF) / 255.0f;
+        CoreStateTracker.INSTANCE.color(fr, fg, fb, 1.0f);
         if (DisplayListCache.INSTANCE.isRecording()) {
             DisplayListCache.INSTANCE.syncColorFromState();
         }
@@ -330,6 +348,31 @@ public final class LegacyGLRedirects {
         }
     }
 
+    public static void glVertex3i(int x, int y, int z) {
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex(x, y, z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f(x, y, z);
+        }
+    }
+
+    public static void glVertex4f(float x, float y, float z, float w) {
+        // Drop w — immediate mode emulator only supports 3D vertices
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex(x, y, z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f(x, y, z);
+        }
+    }
+
+    public static void glVertex4d(double x, double y, double z, double w) {
+        if (DisplayListCache.INSTANCE.isRecording()) {
+            DisplayListCache.INSTANCE.recordVertex((float) x, (float) y, (float) z);
+        } else {
+            ImmediateModeEmulator.INSTANCE.vertex3f((float) x, (float) y, (float) z);
+        }
+    }
+
     public static void glTexCoord2f(float u, float v) {
         if (DisplayListCache.INSTANCE.isRecording()) {
             DisplayListCache.INSTANCE.recordTexCoord(u, v);
@@ -379,6 +422,27 @@ public final class LegacyGLRedirects {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // Rectangle — emulate via immediate mode (removed in core)
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static void glRectf(float x1, float y1, float x2, float y2) {
+        glBegin(0x0007); // GL_QUADS
+        glVertex2f(x1, y1);
+        glVertex2f(x2, y1);
+        glVertex2f(x2, y2);
+        glVertex2f(x1, y2);
+        glEnd();
+    }
+
+    public static void glRecti(int x1, int y1, int x2, int y2) {
+        glRectf(x1, y1, x2, y2);
+    }
+
+    public static void glRectd(double x1, double y1, double x2, double y2) {
+        glRectf((float) x1, (float) y1, (float) x2, (float) y2);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Display lists — emulated via VAO/VBO (for direct GL11 calls)
     // ═══════════════════════════════════════════════════════════════════
 
@@ -400,6 +464,18 @@ public final class LegacyGLRedirects {
 
     public static void glDeleteLists(int list, int range) {
         DisplayListCache.INSTANCE.deleteLists(list, range);
+    }
+
+    public static void glListBase(int base) {
+        DisplayListCache.INSTANCE.setListBase(base);
+    }
+
+    public static void glCallLists(java.nio.IntBuffer lists) {
+        int base = DisplayListCache.INSTANCE.getListBase();
+        int count = lists.remaining();
+        for (int i = 0; i < count; i++) {
+            DisplayListCache.INSTANCE.callList(base + lists.get(lists.position() + i));
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -467,6 +543,10 @@ public final class LegacyGLRedirects {
         }
     }
 
+    public static void glLightf(int light, int pname, float param) {
+        // Single-float light params (spot cutoff, attenuation, etc.) — no-op for our 2-light model
+    }
+
     public static void glLightModelfv(int pname, FloatBuffer params) {
         if (pname == 0x0B53 && params.remaining() >= 4) { // GL_LIGHT_MODEL_AMBIENT
             CoreStateTracker.INSTANCE.setLightModelAmbient(
@@ -474,6 +554,14 @@ public final class LegacyGLRedirects {
                     params.get(params.position() + 2), params.get(params.position() + 3));
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Material — no-op in core profile (shader handles lighting)
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static void glMaterialfv(int face, int pname, FloatBuffer params) {}
+    public static void glMaterialf(int face, int pname, float param) {}
+    public static void glMateriali(int face, int pname, int param) {}
 
     // ═══════════════════════════════════════════════════════════════════
     // Texture environment — no-op in core profile
@@ -516,6 +604,145 @@ public final class LegacyGLRedirects {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // Texture image upload — convert deprecated formats for core profile
+    // ═══════════════════════════════════════════════════════════════════
+
+    private static final int GL_ALPHA8 = 0x803C;
+    private static final int GL_LUMINANCE = 0x1909;
+    private static final int GL_LUMINANCE_ALPHA = 0x190A;
+    private static final int GL_LUMINANCE8 = 0x8040;
+    private static final int GL_LUMINANCE8_ALPHA8 = 0x8045;
+    private static final int GL_INTENSITY = 0x8049;
+    private static final int GL_INTENSITY8 = 0x804B;
+
+    public static void glTexImage2D(int target, int level, int internalformat,
+                                     int width, int height, int border,
+                                     int format, int type, java.nio.ByteBuffer pixels) {
+        int fixedInternal = internalformat;
+        int fixedFormat = format;
+        boolean needSwizzle = false;
+        int swizzleMode = 0; // 0=none, 1=alpha(R→A,RGB=1), 2=luminance(R→RGB,A=1), 3=luminance_alpha(R→RGB,G→A), 4=intensity(R→RGBA)
+
+        // Convert deprecated internal formats
+        switch (internalformat) {
+            case 0x1906: // GL_ALPHA
+            case GL_ALPHA8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_R8;
+                fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+                needSwizzle = true;
+                swizzleMode = 1;
+                break;
+            case GL_LUMINANCE:
+            case GL_LUMINANCE8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_R8;
+                fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+                needSwizzle = true;
+                swizzleMode = 2;
+                break;
+            case GL_LUMINANCE_ALPHA:
+            case GL_LUMINANCE8_ALPHA8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_RG8;
+                fixedFormat = org.lwjgl.opengl.GL30.GL_RG;
+                needSwizzle = true;
+                swizzleMode = 3;
+                break;
+            case GL_INTENSITY:
+            case GL_INTENSITY8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_R8;
+                fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+                needSwizzle = true;
+                swizzleMode = 4;
+                break;
+        }
+        // Also fix the format parameter if it uses a deprecated token
+        if (format == 0x1906) fixedFormat = org.lwjgl.opengl.GL11.GL_RED; // GL_ALPHA as format
+        else if (format == GL_LUMINANCE) fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+        else if (format == GL_LUMINANCE_ALPHA) fixedFormat = org.lwjgl.opengl.GL30.GL_RG;
+
+        org.lwjgl.opengl.GL11.glTexImage2D(target, level, fixedInternal, width, height, border, fixedFormat, type, pixels);
+
+        if (needSwizzle && target == org.lwjgl.opengl.GL11.GL_TEXTURE_2D) {
+            applyFormatSwizzle(swizzleMode);
+        }
+    }
+
+    public static void glTexImage2D_IntBuffer(int target, int level, int internalformat,
+                                               int width, int height, int border,
+                                               int format, int type, java.nio.IntBuffer pixels) {
+        // IntBuffer variant — same format fixup
+        int fixedInternal = internalformat;
+        int fixedFormat = format;
+        boolean needSwizzle = false;
+        int swizzleMode = 0;
+
+        switch (internalformat) {
+            case 0x1906: case GL_ALPHA8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_R8;
+                fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+                needSwizzle = true; swizzleMode = 1; break;
+            case GL_LUMINANCE: case GL_LUMINANCE8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_R8;
+                fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+                needSwizzle = true; swizzleMode = 2; break;
+            case GL_LUMINANCE_ALPHA: case GL_LUMINANCE8_ALPHA8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_RG8;
+                fixedFormat = org.lwjgl.opengl.GL30.GL_RG;
+                needSwizzle = true; swizzleMode = 3; break;
+            case GL_INTENSITY: case GL_INTENSITY8:
+                fixedInternal = org.lwjgl.opengl.GL30.GL_R8;
+                fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+                needSwizzle = true; swizzleMode = 4; break;
+        }
+        if (format == 0x1906) fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+        else if (format == GL_LUMINANCE) fixedFormat = org.lwjgl.opengl.GL11.GL_RED;
+        else if (format == GL_LUMINANCE_ALPHA) fixedFormat = org.lwjgl.opengl.GL30.GL_RG;
+
+        org.lwjgl.opengl.GL11.glTexImage2D(target, level, fixedInternal, width, height, border, fixedFormat, type, pixels);
+
+        if (needSwizzle && target == org.lwjgl.opengl.GL11.GL_TEXTURE_2D) {
+            applyFormatSwizzle(swizzleMode);
+        }
+    }
+
+    private static void applyFormatSwizzle(int mode) {
+        int GL_ONE = org.lwjgl.opengl.GL11.GL_ONE;
+        int GL_ZERO = org.lwjgl.opengl.GL11.GL_ZERO;
+        int GL_RED = org.lwjgl.opengl.GL11.GL_RED;
+        int GL_GREEN = org.lwjgl.opengl.GL11.GL_GREEN;
+        int TEX = org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
+        int SWIZZLE_R = org.lwjgl.opengl.GL33.GL_TEXTURE_SWIZZLE_R;
+        int SWIZZLE_G = org.lwjgl.opengl.GL33.GL_TEXTURE_SWIZZLE_G;
+        int SWIZZLE_B = org.lwjgl.opengl.GL33.GL_TEXTURE_SWIZZLE_B;
+        int SWIZZLE_A = org.lwjgl.opengl.GL33.GL_TEXTURE_SWIZZLE_A;
+        switch (mode) {
+            case 1: // GL_ALPHA: R→A, RGB=1
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_R, GL_ONE);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_G, GL_ONE);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_B, GL_ONE);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_A, GL_RED);
+                break;
+            case 2: // GL_LUMINANCE: R→RGB, A=1
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_R, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_G, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_B, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_A, GL_ONE);
+                break;
+            case 3: // GL_LUMINANCE_ALPHA: R→RGB, G→A
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_R, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_G, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_B, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_A, GL_GREEN);
+                break;
+            case 4: // GL_INTENSITY: R→RGBA
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_R, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_G, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_B, GL_RED);
+                org.lwjgl.opengl.GL11.glTexParameteri(TEX, SWIZZLE_A, GL_RED);
+                break;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Texture bind / delete — deferred deletion for core-profile safety
     // ═══════════════════════════════════════════════════════════════════
 
@@ -540,7 +767,118 @@ public final class LegacyGLRedirects {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // glGetFloatv — intercept matrix queries, pass through the rest
+    // glMultiTexCoord2f — removed in core profile
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static void glMultiTexCoord2f(int target, float s, float t) {
+        // Track lightmap coords if targeting the lightmap unit (GL_TEXTURE1)
+        if (target == 0x84C1) { // GL_TEXTURE1
+            CoreStateTracker.INSTANCE.setLightmapCoords(s, t);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // TexGen — removed in core profile, emulated via CoreStateTracker
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static void glTexGeni(int coord, int pname, int param) {
+        int idx = texGenCoordIndex(coord);
+        if (idx >= 0 && pname == 0x2500) { // GL_TEXTURE_GEN_MODE
+            CoreStateTracker.INSTANCE.setTexGenMode(idx, param);
+        }
+    }
+
+    public static void glTexGenfv(int coord, int pname, FloatBuffer params) {
+        int idx = texGenCoordIndex(coord);
+        if (idx < 0 || params.remaining() < 4) return;
+        float a = params.get(params.position()), b = params.get(params.position() + 1);
+        float c = params.get(params.position() + 2), d = params.get(params.position() + 3);
+        if (pname == 0x2501) { // GL_OBJECT_PLANE
+            CoreStateTracker.INSTANCE.setTexGenObjectPlane(idx, a, b, c, d);
+        } else if (pname == 0x2502) { // GL_EYE_PLANE
+            CoreStateTracker.INSTANCE.setTexGenEyePlane(idx, a, b, c, d);
+        } else if (pname == 0x2500) { // GL_TEXTURE_GEN_MODE
+            CoreStateTracker.INSTANCE.setTexGenMode(idx, (int) a);
+        }
+    }
+
+    public static void glTexGendv(int coord, int pname, java.nio.DoubleBuffer params) {
+        int idx = texGenCoordIndex(coord);
+        if (idx < 0 || params.remaining() < 4) return;
+        float a = (float) params.get(params.position()), b = (float) params.get(params.position() + 1);
+        float c = (float) params.get(params.position() + 2), d = (float) params.get(params.position() + 3);
+        if (pname == 0x2501) { // GL_OBJECT_PLANE
+            CoreStateTracker.INSTANCE.setTexGenObjectPlane(idx, a, b, c, d);
+        } else if (pname == 0x2502) { // GL_EYE_PLANE
+            CoreStateTracker.INSTANCE.setTexGenEyePlane(idx, a, b, c, d);
+        } else if (pname == 0x2500) { // GL_TEXTURE_GEN_MODE
+            CoreStateTracker.INSTANCE.setTexGenMode(idx, (int) a);
+        }
+    }
+
+    private static int texGenCoordIndex(int coord) {
+        return switch (coord) {
+            case 0x0C60 -> 0; // GL_TEXTURE_GEN_S / GL_S
+            case 0x0C61 -> 1; // GL_TEXTURE_GEN_T / GL_T
+            case 0x0C62 -> 2; // GL_TEXTURE_GEN_R / GL_R
+            case 0x0C63 -> 3; // GL_TEXTURE_GEN_Q / GL_Q
+            case 0x2000 -> 0; // GL_S
+            case 0x2001 -> 1; // GL_T
+            case 0x2002 -> 2; // GL_R
+            case 0x2003 -> 3; // GL_Q
+            default -> -1;
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Texture sub-image upload — convert deprecated formats for core
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static void glTexSubImage2D(int target, int level, int xoffset, int yoffset,
+                                        int width, int height, int format, int type,
+                                        java.nio.ByteBuffer pixels) {
+        int fixedFormat = fixDeprecatedFormat(format);
+        org.lwjgl.opengl.GL11.glTexSubImage2D(target, level, xoffset, yoffset, width, height, fixedFormat, type, pixels);
+    }
+
+    public static void glTexSubImage2D_IntBuffer(int target, int level, int xoffset, int yoffset,
+                                                   int width, int height, int format, int type,
+                                                   java.nio.IntBuffer pixels) {
+        int fixedFormat = fixDeprecatedFormat(format);
+        org.lwjgl.opengl.GL11.glTexSubImage2D(target, level, xoffset, yoffset, width, height, fixedFormat, type, pixels);
+    }
+
+    private static int fixDeprecatedFormat(int format) {
+        return switch (format) {
+            case 0x1906 -> org.lwjgl.opengl.GL11.GL_RED;    // GL_ALPHA as format
+            case GL_LUMINANCE -> org.lwjgl.opengl.GL11.GL_RED;
+            case GL_LUMINANCE_ALPHA -> org.lwjgl.opengl.GL30.GL_RG;
+            default -> format;
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Clip planes — legacy glClipPlane transforms equation by current MV
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static void glClipPlane(int plane, java.nio.DoubleBuffer equation) {
+        int idx = plane - 0x3000; // GL_CLIP_PLANE0
+        if (idx < 0 || idx >= 6 || equation.remaining() < 4) return;
+        float a = (float) equation.get(equation.position());
+        float b = (float) equation.get(equation.position() + 1);
+        float c = (float) equation.get(equation.position() + 2);
+        float d = (float) equation.get(equation.position() + 3);
+        org.joml.Matrix4f mv = CoreMatrixStack.INSTANCE.getModelView();
+        org.joml.Matrix4f mvInv = new org.joml.Matrix4f(mv).invert();
+        float ea = mvInv.m00() * a + mvInv.m10() * b + mvInv.m20() * c + mvInv.m30() * d;
+        float eb = mvInv.m01() * a + mvInv.m11() * b + mvInv.m21() * c + mvInv.m31() * d;
+        float ec = mvInv.m02() * a + mvInv.m12() * b + mvInv.m22() * c + mvInv.m32() * d;
+        float ed = mvInv.m03() * a + mvInv.m13() * b + mvInv.m23() * c + mvInv.m33() * d;
+        CoreStateTracker.INSTANCE.setClipPlaneEquation(idx, ea, eb, ec, ed);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // State queries — intercept removed-state queries, pass through rest
     // ═══════════════════════════════════════════════════════════════════
 
     public static void glGetFloatv(int pname, FloatBuffer params) {
@@ -550,4 +888,150 @@ public final class LegacyGLRedirects {
             org.lwjgl.opengl.GL11.glGetFloatv(pname, params);
         }
     }
+
+    public static void glGetIntegerv(int pname, java.nio.IntBuffer params) {
+        Integer val = queryRemovedIntegerState(pname);
+        if (val != null) {
+            params.put(params.position(), val);
+        } else {
+            org.lwjgl.opengl.GL11.glGetIntegerv(pname, params);
+        }
+    }
+
+    public static int glGetInteger(int pname) {
+        Integer val = queryRemovedIntegerState(pname);
+        if (val != null) return val;
+        return org.lwjgl.opengl.GL11.glGetInteger(pname);
+    }
+
+    public static void glGetDoublev(int pname, java.nio.DoubleBuffer params) {
+        if (CoreMatrixStack.INSTANCE.isMatrixQuery(pname)) {
+            // Get as float then convert
+            FloatBuffer fb = org.lwjgl.BufferUtils.createFloatBuffer(16);
+            CoreMatrixStack.INSTANCE.getFloat(pname, fb);
+            for (int i = 0; i < 16 && i < params.remaining(); i++) {
+                params.put(params.position() + i, fb.get(i));
+            }
+        } else {
+            Integer intVal = queryRemovedIntegerState(pname);
+            if (intVal != null) {
+                params.put(params.position(), intVal);
+            } else {
+                org.lwjgl.opengl.GL11.glGetDoublev(pname, params);
+            }
+        }
+    }
+
+    private static Integer queryRemovedIntegerState(int pname) {
+        return switch (pname) {
+            case 0x0BA0 -> CoreMatrixStack.INSTANCE.getMatrixMode();  // GL_MATRIX_MODE
+            case 0x0B52 -> CoreStateTracker.INSTANCE.getShadeModel(); // GL_SHADE_MODEL
+            case 0x0BC0 -> CoreStateTracker.INSTANCE.isAlphaTestEnabled() ? 1 : 0; // GL_ALPHA_TEST
+            case 0x0BC1 -> CoreStateTracker.INSTANCE.getAlphaFunc();  // GL_ALPHA_TEST_FUNC
+            default -> null;
+        };
+    }
+
+    public static boolean glIsEnabled(int cap) {
+        return switch (cap) {
+            case 0x0BC0 -> CoreStateTracker.INSTANCE.isAlphaTestEnabled();  // GL_ALPHA_TEST
+            case 0x0B50 -> CoreStateTracker.INSTANCE.isLightingEnabled();   // GL_LIGHTING
+            case 0x0B60 -> CoreStateTracker.INSTANCE.isFogEnabled();        // GL_FOG
+            case 0x0DE1 -> CoreStateTracker.INSTANCE.isTexture2DEnabled(    // GL_TEXTURE_2D
+                    CoreStateTracker.INSTANCE.getActiveTextureUnit());
+            case 0x0BA1 -> CoreStateTracker.INSTANCE.isNormalizeEnabled();  // GL_NORMALIZE
+            case 0x803A -> CoreStateTracker.INSTANCE.isRescaleNormalEnabled(); // GL_RESCALE_NORMAL
+            case 0x0B57 -> CoreStateTracker.INSTANCE.isColorMaterialEnabled(); // GL_COLOR_MATERIAL
+            case 0x4000, 0x4001, 0x4002, 0x4003,                            // GL_LIGHT0-7
+                 0x4004, 0x4005, 0x4006, 0x4007 ->
+                    CoreStateTracker.INSTANCE.isLightEnabled(cap - 0x4000);
+            case 0x0C60 -> CoreStateTracker.INSTANCE.isTexGenEnabled(0);    // GL_TEXTURE_GEN_S
+            case 0x0C61 -> CoreStateTracker.INSTANCE.isTexGenEnabled(1);    // GL_TEXTURE_GEN_T
+            case 0x0C62 -> CoreStateTracker.INSTANCE.isTexGenEnabled(2);    // GL_TEXTURE_GEN_R
+            case 0x0C63 -> CoreStateTracker.INSTANCE.isTexGenEnabled(3);    // GL_TEXTURE_GEN_Q
+            case 0x3000, 0x3001, 0x3002, 0x3003,                            // GL_CLIP_PLANE0-5
+                 0x3004, 0x3005 ->
+                    CoreStateTracker.INSTANCE.isClipPlaneEnabled(cap - 0x3000);
+            default -> org.lwjgl.opengl.GL11.glIsEnabled(cap);              // core caps pass through
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // GLU Project/UnProject — use CoreMatrixStack instead of GL queries
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static boolean gluProject(float objX, float objY, float objZ,
+                                      FloatBuffer modelview, FloatBuffer projection,
+                                      java.nio.IntBuffer viewport, FloatBuffer winPos) {
+        // Use the provided matrices (already filled by caller from CoreMatrixStack)
+        // and perform the projection manually
+        org.joml.Matrix4f mv = new org.joml.Matrix4f().set(modelview);
+        org.joml.Matrix4f proj = new org.joml.Matrix4f().set(projection);
+
+        // Transform: clip = proj * mv * obj
+        org.joml.Vector4f obj = new org.joml.Vector4f(objX, objY, objZ, 1.0f);
+        org.joml.Vector4f eye = mv.transform(obj, new org.joml.Vector4f());
+        org.joml.Vector4f clip = proj.transform(eye, new org.joml.Vector4f());
+
+        if (clip.w == 0.0f) return false;
+        clip.x /= clip.w;
+        clip.y /= clip.w;
+        clip.z /= clip.w;
+
+        // Map to window coords
+        int vpX = viewport.get(viewport.position());
+        int vpY = viewport.get(viewport.position() + 1);
+        int vpW = viewport.get(viewport.position() + 2);
+        int vpH = viewport.get(viewport.position() + 3);
+        winPos.put(winPos.position(),     vpX + (clip.x * 0.5f + 0.5f) * vpW);
+        winPos.put(winPos.position() + 1, vpY + (clip.y * 0.5f + 0.5f) * vpH);
+        winPos.put(winPos.position() + 2, clip.z * 0.5f + 0.5f);
+        return true;
+    }
+
+    public static boolean gluUnProject(float winX, float winY, float winZ,
+                                        FloatBuffer modelview, FloatBuffer projection,
+                                        java.nio.IntBuffer viewport, FloatBuffer objPos) {
+        org.joml.Matrix4f mv = new org.joml.Matrix4f().set(modelview);
+        org.joml.Matrix4f proj = new org.joml.Matrix4f().set(projection);
+
+        org.joml.Matrix4f combined = new org.joml.Matrix4f(proj).mul(mv);
+        org.joml.Matrix4f inv = new org.joml.Matrix4f(combined).invert();
+
+        int vpX = viewport.get(viewport.position());
+        int vpY = viewport.get(viewport.position() + 1);
+        int vpW = viewport.get(viewport.position() + 2);
+        int vpH = viewport.get(viewport.position() + 3);
+
+        // Map window coords to NDC
+        float ndcX = (winX - vpX) / vpW * 2.0f - 1.0f;
+        float ndcY = (winY - vpY) / vpH * 2.0f - 1.0f;
+        float ndcZ = winZ * 2.0f - 1.0f;
+
+        org.joml.Vector4f ndc = new org.joml.Vector4f(ndcX, ndcY, ndcZ, 1.0f);
+        org.joml.Vector4f result = inv.transform(ndc, new org.joml.Vector4f());
+
+        if (result.w == 0.0f) return false;
+        objPos.put(objPos.position(),     result.x / result.w);
+        objPos.put(objPos.position() + 1, result.y / result.w);
+        objPos.put(objPos.position() + 2, result.z / result.w);
+        return true;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Pixel operations — removed in core profile, no-ops
+    // ═══════════════════════════════════════════════════════════════════
+
+    public static void glRasterPos2f(float x, float y) {}
+    public static void glRasterPos2d(double x, double y) {}
+    public static void glRasterPos2i(int x, int y) {}
+    public static void glRasterPos3f(float x, float y, float z) {}
+    public static void glRasterPos3d(double x, double y, double z) {}
+    public static void glBitmap(int width, int height, float xorig, float yorig,
+                                 float xmove, float ymove, java.nio.ByteBuffer bitmap) {}
+    public static void glDrawPixels(int width, int height, int format, int type,
+                                     java.nio.ByteBuffer pixels) {}
+    public static void glPixelTransferf(int pname, float param) {}
+    public static void glPixelTransferi(int pname, int param) {}
+    public static void glPixelZoom(float xfactor, float yfactor) {}
 }

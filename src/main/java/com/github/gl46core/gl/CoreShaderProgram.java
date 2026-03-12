@@ -73,9 +73,15 @@ public final class CoreShaderProgram {
     //   vec4  uTexGenObjectPlaneT     offset 128
     //   int   uTexGenSMode            offset 144
     //   int   uTexGenTMode            offset 148
-    //   int   _pad0                   offset 152
-    //   int   _pad1                   offset 156
-    private static final int PD_SIZE = 160;
+    //   int   uClipPlaneEnabled       offset 152 (bitmask: bit0=plane0 .. bit5=plane5)
+    //   int   _pad0                   offset 156
+    //   vec4  uClipPlane0             offset 160
+    //   vec4  uClipPlane1             offset 176
+    //   vec4  uClipPlane2             offset 192
+    //   vec4  uClipPlane3             offset 208
+    //   vec4  uClipPlane4             offset 224
+    //   vec4  uClipPlane5             offset 240
+    private static final int PD_SIZE = 256;
     private final ByteBuffer pdBuf = ByteBuffer.allocateDirect(PD_SIZE).order(ByteOrder.nativeOrder());
 
     private final org.joml.Matrix4f cachedMVP = new org.joml.Matrix4f();
@@ -292,7 +298,15 @@ public final class CoreShaderProgram {
             pdBuf.putFloat(128, objT[0]); pdBuf.putFloat(132, objT[1]); pdBuf.putFloat(136, objT[2]); pdBuf.putFloat(140, objT[3]);
             pdBuf.putInt(144, state.getTexGenMode(0));
             pdBuf.putInt(148, state.getTexGenMode(1));
-            pdBuf.putInt(152, 0);
+            int clipBits = 0;
+            for (int i = 0; i < 6; i++) {
+                if (state.isClipPlaneEnabled(i)) clipBits |= (1 << i);
+                float[] eq = state.getClipPlaneEquation(i);
+                int off = 160 + i * 16;
+                pdBuf.putFloat(off, eq[0]); pdBuf.putFloat(off + 4, eq[1]);
+                pdBuf.putFloat(off + 8, eq[2]); pdBuf.putFloat(off + 12, eq[3]);
+            }
+            pdBuf.putInt(152, clipBits);
             pdBuf.putInt(156, 0);
 
             pdBuf.position(0).limit(PD_SIZE);
@@ -310,6 +324,10 @@ public final class CoreShaderProgram {
 
     public int getProgramId() {
         return programId;
+    }
+
+    public int getPerDrawUbo() {
+        return perDrawUbo;
     }
 
     // ── Shader compilation ──
