@@ -395,6 +395,27 @@ layout(std140, binding = 2) uniform PerMaterial {
     vec4 uClipPlane[6];
 };
 
+// ── PerPass UBO (binding 3) — pass-specific context ──
+layout(std140, binding = 3) uniform PerPass {
+    int  gl46_passType;           // PassType ordinal
+    int  gl46_passFlags;          // depth/blend/cull bitfield
+    int  gl46_fogOverrideMode;    // 0=scene, 1=disabled, 2=custom
+    int  gl46_shadowCascade;
+    ivec2 gl46_targetSize;        // render target dimensions
+    float gl46_exposure;
+    float gl46_alphaRefOverride;
+    int  gl46_renderLayerMask;
+    int  gl46_mediumOverride;
+    int  gl46_postEffectFlags;
+    int  gl46_lightingMode;       // 0=full, 1=ambient-only, 2=unlit
+    vec4 gl46_fogColorOverride;
+    float gl46_dynamicLightScale;
+    int  gl46_lightingPassFlags;
+    int  gl46_maxDynamicLights;
+    int  gl46_passPad1;
+    vec4 gl46_ambientOverride;    // w=0 means use scene ambient
+};
+
 // ── Dynamic Light SSBO (binding 2, separate from UBO binding 2) ──
 struct DynLight {
     vec4 positionAndRadius;   // xyz=eyeSpace, w=radius

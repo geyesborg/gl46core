@@ -4,6 +4,7 @@ import com.github.gl46core.api.debug.RenderProfiler;
 import com.github.gl46core.api.render.DynamicLightCollector;
 import com.github.gl46core.api.render.FrameOrchestrator;
 import com.github.gl46core.api.render.GlobalLightState;
+import com.github.gl46core.api.render.PassType;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
 import com.github.gl46core.api.translate.LegacyStateInterpreter;
 import com.github.gl46core.gl.CoreMatrixStack;
@@ -121,6 +122,14 @@ public class MixinEntityRenderer {
     @Inject(method = "renderWorldPass", at = @At("RETURN"))
     private void gl46core$endWorldPass(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         RenderProfiler.INSTANCE.endPass("world_pass_" + pass);
+    }
+
+    /**
+     * Track hand rendering pass.
+     */
+    @Inject(method = "renderHand", at = @At("HEAD"))
+    private void gl46core$onRenderHand(float partialTicks, int pass, CallbackInfo ci) {
+        FrameOrchestrator.INSTANCE.setActivePass(PassType.HAND);
     }
 
     /**

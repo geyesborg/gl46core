@@ -19,6 +19,7 @@
     "MixinCloudRenderer",
     "MixinActiveRenderInfo",
     "MixinEntityRenderer",
+    "MixinRenderGlobal",
     "AccessorVertexBuffer",
     "AccessorModelBox",
     "MixinVertexBuffer"

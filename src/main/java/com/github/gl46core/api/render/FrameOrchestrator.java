@@ -38,6 +38,11 @@ public final class FrameOrchestrator {
     public static final int SCENE_UBO_BINDING = 5;
     private GpuBuffer sceneUbo;
 
+    // PerPass UBO — binding 3, 96 bytes. Uploaded when the active pass changes.
+    public static final int PASS_UBO_BINDING = 3;
+    private GpuBuffer passUbo;
+    private PassType lastUploadedPassType;
+
     // Per-pass-type queues — one queue per PassType
     private final EnumMap<PassType, RenderQueue> queues = new EnumMap<>(PassType.class);
 
@@ -101,6 +106,8 @@ public final class FrameOrchestrator {
         totalSubmissions = 0;
         totalDrawCalls = 0;
         passesExecuted = 0;
+        lastUploadedPassType = null;
+        BuiltinPasses.setActive(PassType.TERRAIN_OPAQUE);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -117,7 +124,8 @@ public final class FrameOrchestrator {
     }
 
     /**
-     * Finalize scene collection. Packs scene data and uploads to GPU.
+     * Finalize scene collection. Packs scene data, uploads to GPU,
+     * registers built-in passes, and builds the pass graph.
      */
     public void endCollectScene() {
         sceneData.pack(frameContext);
@@ -127,8 +135,17 @@ public final class FrameOrchestrator {
             sceneUbo = GpuBufferPool.INSTANCE.createDynamicUBO(SceneData.GPU_SIZE);
         }
 
+        // Lazily create the PerPass UBO
+        if (passUbo == null) {
+            passUbo = GpuBufferPool.INSTANCE.createDynamicUBO(PassData.GPU_SIZE);
+        }
+
         // Upload packed scene data to GPU
         sceneUbo.upload(sceneData.getBuffer(), 0, SceneData.GPU_SIZE);
+
+        // Register built-in passes and build the pass graph
+        BuiltinPasses.register(passGraph);
+        buildPassGraph();
     }
 
     /**
@@ -139,6 +156,36 @@ public final class FrameOrchestrator {
         if (sceneUbo != null) {
             sceneUbo.bindBase(GL31.GL_UNIFORM_BUFFER, SCENE_UBO_BINDING);
         }
+    }
+
+    /**
+     * Notify the orchestrator that the active rendering stage has changed.
+     * Uploads the corresponding PassData to the PerPass UBO.
+     *
+     * Called by mixin hooks at MC rendering stage boundaries.
+     */
+    public void setActivePass(PassType type) {
+        BuiltinPasses.setActive(type);
+
+        // Only re-upload if pass actually changed
+        if (type == lastUploadedPassType) return;
+        lastUploadedPassType = type;
+
+        BuiltinPasses.TranslationPass pass = BuiltinPasses.getActivePass();
+        pass.setup(frameContext, pass.getPassData());
+
+        if (passUbo != null) {
+            passUbo.upload(pass.getPassData().pack(), 0, PassData.GPU_SIZE);
+            passUbo.bindBase(GL31.GL_UNIFORM_BUFFER, PASS_UBO_BINDING);
+        }
+        passesExecuted++;
+    }
+
+    /**
+     * Get the currently active pass type.
+     */
+    public PassType getActivePassType() {
+        return BuiltinPasses.getActivePassType();
     }
 
     // ═══════════════════════════════════════════════════════════════════
