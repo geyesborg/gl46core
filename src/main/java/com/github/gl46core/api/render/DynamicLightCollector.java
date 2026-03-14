@@ -4,6 +4,8 @@ import com.github.gl46core.api.hook.DynamicLightProvider;
 import com.github.gl46core.api.hook.RenderRegistry;
 import com.github.gl46core.api.render.gpu.LightBuffer;
 import com.github.gl46core.api.render.gpu.LightIndexBuffer;
+import org.joml.Matrix4f;
+import org.joml.Vector3d;
 
 import java.util.List;
 
@@ -92,14 +94,32 @@ public final class DynamicLightCollector {
 
     /**
      * Pack collected lights into GPU buffers, upload, and bind SSBOs.
+     * Light positions are transformed from world-space to eye-space so
+     * the fragment shader can compare directly with vEyePos.
      */
     public void flush() {
         if (!initialized) return;
 
-        // Pack all collected lights into the LightBuffer now that providers
-        // have finished populating the LightData objects
+        // Grab camera state for world→eye-space transform
+        CameraState cam = FrameOrchestrator.INSTANCE.getFrameContext().getCamera();
+        Matrix4f viewMat = cam.getViewMatrix();
+        Vector3d camPos = cam.getPosition();
+        float cx = (float) camPos.x, cy = (float) camPos.y, cz = (float) camPos.z;
+
+        // Pack all collected lights into the LightBuffer.
+        // Transform positions: world → camera-relative → eye-space.
+        // Pool LightData is per-frame so safe to modify positions in-place.
         for (int i = 0; i < poolCount; i++) {
-            lightBuffer.addLight(lightPool[i]);
+            LightData ld = lightPool[i];
+            float wx = ld.getPosition().x - cx;
+            float wy = ld.getPosition().y - cy;
+            float wz = ld.getPosition().z - cz;
+            // viewMat is pure rotation (no translation) in MC 1.12.2
+            float ex = viewMat.m00() * wx + viewMat.m10() * wy + viewMat.m20() * wz;
+            float ey = viewMat.m01() * wx + viewMat.m11() * wy + viewMat.m21() * wz;
+            float ez = viewMat.m02() * wx + viewMat.m12() * wy + viewMat.m22() * wz;
+            ld.setPosition(ex, ey, ez);
+            lightBuffer.addLight(ld);
         }
         lastFrameLightCount = lightBuffer.getCount();
 

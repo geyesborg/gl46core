@@ -251,6 +251,7 @@ out vec2 vTexCoord;
 out vec2 vLightMap;
 out vec3 vNormal;
 out float vFogDist;
+out vec3 vEyePos;
 
 void main() {
     // Select transform source: SSBO (queued path) or UBO (immediate path)
@@ -264,9 +265,9 @@ void main() {
 
     gl_Position = gl46_mvp * vec4(aPosition, 1.0);
 
-#ifdef NEED_EYE_POS
+    // Always compute eye-space position (needed for dynamic lights + fog)
     vec4 eyePos = gl46_mv * vec4(aPosition, 1.0);
-#endif
+    vEyePos = eyePos.xyz;
 
 #ifdef NEED_NORMAL
     vec3 eyeNormal = mat3(gl46_mv) * aNormal;
@@ -353,6 +354,7 @@ in vec2 vTexCoord;
 in vec2 vLightMap;
 in vec3 vNormal;
 in float vFogDist;
+in vec3 vEyePos;
 
 layout(binding = 0) uniform sampler2D uTexture;
 layout(binding = 1) uniform sampler2D uLightMapTex;
@@ -393,6 +395,23 @@ layout(std140, binding = 2) uniform PerMaterial {
     vec4 uClipPlane[6];
 };
 
+// ── Dynamic Light SSBO (binding 2, separate from UBO binding 2) ──
+struct DynLight {
+    vec4 positionAndRadius;   // xyz=eyeSpace, w=radius
+    vec4 colorAndIntensity;   // rgb=color, a=intensity
+    int  lightType;           // 0=point, 1=spot, 2=area
+    int  shadowFlags;
+    float falloffExponent;
+    float spotAngle;
+};
+layout(std430, binding = 2) readonly buffer LightSSBO {
+    int gl46_lightCount;
+    int gl46_maxLights;
+    int gl46_lightPad0;
+    int gl46_lightPad1;
+    DynLight gl46_lights[];
+};
+
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 fragData1;
 
@@ -428,6 +447,24 @@ void main() {
     color.rgb *= lm.rgb;
   #endif
 #endif
+
+    // ── Dynamic light accumulation (eye-space) ──
+    if (gl46_lightCount > 0) {
+        vec3 dynLight = vec3(0.0);
+        for (int i = 0; i < gl46_lightCount; i++) {
+            vec3 lPos = gl46_lights[i].positionAndRadius.xyz;
+            float lRadius = gl46_lights[i].positionAndRadius.w;
+            vec3 lColor = gl46_lights[i].colorAndIntensity.rgb;
+            float lIntensity = gl46_lights[i].colorAndIntensity.a;
+            float lFalloff = gl46_lights[i].falloffExponent;
+            float dist = distance(lPos, vEyePos);
+            if (dist < lRadius) {
+                float atten = pow(max(1.0 - dist / lRadius, 0.0), lFalloff) * lIntensity;
+                dynLight += lColor * atten;
+            }
+        }
+        color.rgb = min(color.rgb * (1.0 + dynLight), vec3(1.0));
+    }
 
 #ifdef ALPHA_TEST_ENABLED
     // GL_NEVER=512, GL_LESS=513, GL_EQUAL=514, GL_LEQUAL=515,
