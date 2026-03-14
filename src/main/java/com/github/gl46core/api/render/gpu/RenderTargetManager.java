@@ -173,6 +173,21 @@ public final class RenderTargetManager {
     public int     getShadowResolution() { return shadowResolution; }
     public int     getTargetCount()  { return targetsByName.size(); }
 
+    /** Get all named targets as an unmodifiable map. */
+    public java.util.Map<String, RenderTarget> getAllTargets() {
+        return java.util.Collections.unmodifiableMap(targetsByName);
+    }
+
+    /** Look up a named FBO. Valid names: "gbuffer", "shadow", "composite". */
+    public FramebufferObject getFbo(String name) {
+        return switch (name) {
+            case "gbuffer"   -> gbufferFbo;
+            case "shadow"    -> shadowFbo;
+            case "composite" -> compositeFbo;
+            default          -> null;
+        };
+    }
+
     /**
      * Estimate total VRAM used by all render targets.
      */
