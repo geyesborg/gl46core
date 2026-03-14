@@ -4,6 +4,7 @@ import com.github.gl46core.api.hook.RenderEventListener;
 import com.github.gl46core.api.hook.RenderRegistry;
 import com.github.gl46core.api.render.gpu.GpuBuffer;
 import com.github.gl46core.api.render.gpu.GpuBufferPool;
+import com.github.gl46core.api.translate.LegacyDrawTranslator;
 import org.lwjgl.opengl.GL31;
 
 import java.util.EnumMap;
@@ -110,6 +111,7 @@ public final class FrameOrchestrator {
         passesExecuted = 0;
         lastUploadedPassType = null;
         BuiltinPasses.setActive(PassType.TERRAIN_OPAQUE);
+        LegacyDrawTranslator.INSTANCE.beginFrame();
 
         // Fire onFrameBegin for all registered event listeners
         fireFrameBegin();

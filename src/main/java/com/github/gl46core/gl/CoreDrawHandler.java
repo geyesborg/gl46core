@@ -1,5 +1,6 @@
 package com.github.gl46core.gl;
 
+import com.github.gl46core.api.translate.LegacyDrawTranslator;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.vertex.VertexFormat;
 import net.minecraft.client.renderer.vertex.VertexFormatElement;
@@ -209,6 +210,13 @@ public final class CoreDrawHandler {
             GL11.glDrawArrays(drawMode, 0, vertexCount);
         }
         com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+
+        // Record submission in the RenderQueue for statistics and hook support.
+        // The draw already happened above (immediate mode); this is a shadow
+        // submission that gives the pass system visibility into what was drawn.
+        LegacyDrawTranslator.INSTANCE.translateDraw(
+            drawMode, vertexCount, 0,
+            hasColor, hasTexCoord, hasNormal, hasLightMap);
 
         } catch (Throwable t) {
             com.github.gl46core.GL46Core.LOGGER.error("[CoreDrawHandler] Exception during draw:", t);

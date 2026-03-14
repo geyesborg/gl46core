@@ -83,8 +83,9 @@ public final class DebugOverlayHandler {
         FrameOrchestrator orch = FrameOrchestrator.INSTANCE;
         String activePass = orch.getActivePassType() != null ? orch.getActivePassType().getId() : "none";
         int passCount = orch.getPassGraph().getPassCount();
-        event.getRight().add(String.format("Pass: %s | Graph: %d passes | %d executed",
-                activePass, passCount, orch.getPassesExecuted()));
+        int submissions = com.github.gl46core.api.translate.LegacyDrawTranslator.INSTANCE.getSubmissionCount();
+        event.getRight().add(String.format("Pass: %s | Graph: %d | Exec: %d | Subs: %d",
+                activePass, passCount, orch.getPassesExecuted(), submissions));
 
         com.github.gl46core.api.render.FogState fog = FrameOrchestrator.INSTANCE.getFrameContext().getFog();
         String fogMode = fog.getMode() == 0x2601 ? "LINEAR" : fog.getMode() == 0x0800 ? "EXP" : fog.getMode() == 0x0801 ? "EXP2" : "0x" + Integer.toHexString(fog.getMode());
