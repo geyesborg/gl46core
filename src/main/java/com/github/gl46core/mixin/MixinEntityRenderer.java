@@ -1,6 +1,7 @@
 package com.github.gl46core.mixin;
 
 import com.github.gl46core.api.debug.RenderProfiler;
+import com.github.gl46core.api.render.DynamicLightCollector;
 import com.github.gl46core.api.render.FrameOrchestrator;
 import com.github.gl46core.api.render.GlobalLightState;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
@@ -49,6 +50,9 @@ public class MixinEntityRenderer {
 
         // Tick model geometry cache (eviction + stats)
         com.github.gl46core.gl.ModelGeometryCache.INSTANCE.tick();
+
+        // Reset dynamic light collector for this frame
+        DynamicLightCollector.INSTANCE.beginFrame();
     }
 
     /**
@@ -100,6 +104,10 @@ public class MixinEntityRenderer {
         // Capture extended lighting (sun/moon direction, color, environment)
         gl46core$captureExtendedLighting(orch.getFrameContext().getGlobalLight(),
             celestialAngle, sunBrightness, hasSky, dimId, rain, thunder);
+
+        // Collect dynamic lights from registered providers
+        DynamicLightCollector.INSTANCE.collect(orch.getFrameContext());
+        DynamicLightCollector.INSTANCE.flush();
 
         // Finalize scene collection
         orch.endCollectScene();
