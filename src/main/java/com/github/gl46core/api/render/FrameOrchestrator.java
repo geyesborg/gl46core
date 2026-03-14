@@ -185,6 +185,7 @@ public final class FrameOrchestrator {
         // Fire onAfterPass for the outgoing pass
         if (lastUploadedPassType != null && lastUploadedPassType != type) {
             fireAfterPass(BuiltinPasses.getActivePass());
+            com.github.gl46core.api.debug.RenderProfiler.INSTANCE.endPass(lastUploadedPassType);
         }
 
         BuiltinPasses.setActive(type);
@@ -192,6 +193,7 @@ public final class FrameOrchestrator {
         // Only re-upload if pass actually changed
         if (type == lastUploadedPassType) return;
         lastUploadedPassType = type;
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.beginPass(type);
 
         BuiltinPasses.TranslationPass pass = BuiltinPasses.getActivePass();
 
@@ -312,6 +314,11 @@ public final class FrameOrchestrator {
     public void endFrame() {
         currentStage = FrameStage.END;
         frameEndNanos = System.nanoTime();
+
+        // End timing for the last active pass
+        if (lastUploadedPassType != null) {
+            com.github.gl46core.api.debug.RenderProfiler.INSTANCE.endPass(lastUploadedPassType);
+        }
 
         // Fire onFrameEnd for all registered event listeners
         fireFrameEnd();

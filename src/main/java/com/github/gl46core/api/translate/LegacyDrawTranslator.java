@@ -85,7 +85,10 @@ public final class LegacyDrawTranslator {
         sub.setMaterialIndex(material.getMaterialId());
         sub.setMesh(vboOffset, vertexCount, -1, drawMode);
 
-        // 5. Build sort key
+        // 5. Record per-pass draw count for profiler
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordPassDrawCount(passType, 1);
+
+        // 6. Build sort key
         int idx = submissionIndex++;
         if (passType.isTranslucent()) {
             sub.buildTranslucentKey(2, material.getMaterialId() & 0xFF,
