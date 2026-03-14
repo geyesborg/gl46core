@@ -358,6 +358,23 @@ public final class CoreStateTracker {
     public void disableTexture2D(int unit) { if (unit >= 0 && unit < 8) { flushPending(); coreState().texture2DEnabled[unit] = false; dirty(); } }
     public boolean isTexture2DEnabled(int unit) { return unit >= 0 && unit < 8 && coreState().texture2DEnabled[unit]; }
 
+    /**
+     * Track the currently bound texture for a given unit.
+     * Called from GlStateManager.bindTexture() mixin.
+     */
+    public void bindTexture(int unit, int textureId) {
+        if (unit >= 0 && unit < 8) {
+            coreState().boundTextureId[unit] = textureId;
+        }
+    }
+    public int getBoundTexture(int unit) {
+        return (unit >= 0 && unit < 8) ? coreState().boundTextureId[unit] : 0;
+    }
+    /** Get the diffuse texture bound to unit 0. */
+    public int getBoundTexture2D() { return coreState().boundTextureId[0]; }
+    /** Get the lightmap texture bound to unit 1. */
+    public int getLightmapTexture() { return coreState().boundTextureId[1]; }
+
     // ── Normalize ───────────────────────────────────────────────────────
 
     public void enableNormalize() { flushPending(); normalizeEnabled = true; dirty(); }
@@ -483,6 +500,7 @@ public final class CoreStateTracker {
         // enableTexture2D overwrites the splash thread's disableTexture2D, causing
         // the shader to sample garbage textures and making bars invisible.
         boolean[] texture2DEnabled = {true, false, false, false, false, false, false, false};
+        int[] boundTextureId = new int[8]; // GL texture name per unit
         float colorR = 1.0f, colorG = 1.0f, colorB = 1.0f, colorA = 1.0f;
     }
 
@@ -515,6 +533,7 @@ public final class CoreStateTracker {
     public boolean isDepthTestEnabled() { return coreState().depthTestEnabled; }
     public int getDepthFunc() { return coreState().depthFunc; }
     public boolean getDepthMask() { return coreState().depthMask; }
+    public boolean isDepthMaskEnabled() { return coreState().depthMask; }
 
     // ── Blend ──────────────────────────────────────────────────────────
 
@@ -537,6 +556,10 @@ public final class CoreStateTracker {
         GL14.glBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha);
     }
     public boolean isBlendEnabled() { return coreState().blendEnabled; }
+    public int getBlendSrcRgb()   { return coreState().blendSrcRGB; }
+    public int getBlendDstRgb()   { return coreState().blendDstRGB; }
+    public int getBlendSrcAlpha() { return coreState().blendSrcAlpha; }
+    public int getBlendDstAlpha() { return coreState().blendDstAlpha; }
 
     // ── Cull face ──────────────────────────────────────────────────────
 
@@ -554,6 +577,7 @@ public final class CoreStateTracker {
         GL11.glCullFace(mode);
     }
     public boolean isCullEnabled() { return coreState().cullEnabled; }
+    public boolean isCullFaceEnabled() { return coreState().cullEnabled; }
     public int getCullFaceMode() { return coreState().cullFaceMode; }
 
     // ── Polygon offset ─────────────────────────────────────────────────

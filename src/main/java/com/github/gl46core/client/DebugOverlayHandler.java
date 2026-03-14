@@ -119,6 +119,19 @@ public final class DebugOverlayHandler {
             event.getRight().add("Shaderpack: none");
         }
 
+        if (orch.isDeferredMode()) {
+            com.github.gl46core.api.render.deferred.DrawCommandBuffer cmdBuf = orch.getDrawCommandBuffer();
+            com.github.gl46core.api.render.deferred.DrawCommandExecutor exec = orch.getDrawCommandExecutor();
+            int cmdCount = cmdBuf != null ? cmdBuf.getCount() : 0;
+            com.github.gl46core.api.render.deferred.DeferredVboAllocator dvbo = orch.getDeferredVbo();
+            String vboUsed = dvbo != null ? String.format("%.1fMB", dvbo.getUsedBytes() / (1024.0*1024.0)) : "?";
+            double replayMs = exec != null ? exec.getReplayTimeMs() : 0;
+            event.getRight().add(String.format("Deferred: %d cmds | %s VBO | %.1fms replay",
+                    cmdCount, vboUsed, replayMs));
+        } else {
+            event.getRight().add("Deferred: off");
+        }
+
         com.github.gl46core.api.render.FogState fog = FrameOrchestrator.INSTANCE.getFrameContext().getFog();
         String fogMode = fog.getMode() == 0x2601 ? "LINEAR" : fog.getMode() == 0x0800 ? "EXP" : fog.getMode() == 0x0801 ? "EXP2" : "0x" + Integer.toHexString(fog.getMode());
         event.getRight().add(String.format("Fog: %s start=%.0f end=%.0f d=%.4f col=(%.2f,%.2f,%.2f)",

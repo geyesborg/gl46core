@@ -2,6 +2,9 @@ package com.github.gl46core.api.render;
 
 import com.github.gl46core.api.hook.RenderEventListener;
 import com.github.gl46core.api.hook.RenderRegistry;
+import com.github.gl46core.api.render.deferred.DeferredVboAllocator;
+import com.github.gl46core.api.render.deferred.DrawCommandBuffer;
+import com.github.gl46core.api.render.deferred.DrawCommandExecutor;
 import com.github.gl46core.api.render.gpu.GpuBuffer;
 import com.github.gl46core.api.render.gpu.GpuBufferPool;
 import com.github.gl46core.api.render.gpu.MaterialBuffer;
@@ -52,6 +55,13 @@ public final class FrameOrchestrator {
     // Populated per-frame by LegacyDrawTranslator, flushed before first pass draw.
     private MaterialBuffer materialBuffer;
     private boolean materialBufferDirty;
+
+    // Deferred draw execution — when enabled, draws are recorded instead of
+    // issued immediately, then replayed in sorted pass order.
+    private boolean deferredMode;
+    private DeferredVboAllocator deferredVbo;
+    private DrawCommandBuffer drawCommandBuffer;
+    private DrawCommandExecutor drawCommandExecutor;
 
     // Per-pass-type queues — one queue per PassType
     private final EnumMap<PassType, RenderQueue> queues = new EnumMap<>(PassType.class);
@@ -120,6 +130,18 @@ public final class FrameOrchestrator {
         materialBufferDirty = true;
         BuiltinPasses.setActive(PassType.TERRAIN_OPAQUE);
         LegacyDrawTranslator.INSTANCE.beginFrame();
+
+        // Reset deferred draw state
+        if (deferredMode) {
+            if (deferredVbo == null) {
+                deferredVbo = new DeferredVboAllocator();
+                deferredVbo.init();
+                drawCommandBuffer = new DrawCommandBuffer();
+                drawCommandExecutor = new DrawCommandExecutor();
+            }
+            deferredVbo.beginFrame();
+            drawCommandBuffer.beginFrame();
+        }
 
         // Initialize or resize render targets based on current viewport
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getMinecraft();
@@ -371,11 +393,27 @@ public final class FrameOrchestrator {
     // Accessors
     // ═══════════════════════════════════════════════════════════════════
 
-    public FrameContext    getFrameContext()    { return frameContext; }
-    public PassGraph       getPassGraph()      { return passGraph; }
-    public SceneData       getSceneData()      { return sceneData; }
-    public FrameStage      getCurrentStage()   { return currentStage; }
-    public MaterialBuffer  getMaterialBuffer()  { return materialBuffer; }
+    public FrameContext    getFrameContext()      { return frameContext; }
+    public PassGraph       getPassGraph()        { return passGraph; }
+    public SceneData       getSceneData()        { return sceneData; }
+    public FrameStage      getCurrentStage()     { return currentStage; }
+    public MaterialBuffer  getMaterialBuffer()   { return materialBuffer; }
+
+    // Deferred draw execution
+    public boolean              isDeferredMode()        { return deferredMode; }
+    public DeferredVboAllocator getDeferredVbo()        { return deferredVbo; }
+    public DrawCommandBuffer    getDrawCommandBuffer()  { return drawCommandBuffer; }
+    public DrawCommandExecutor  getDrawCommandExecutor(){ return drawCommandExecutor; }
+
+    /**
+     * Enable or disable deferred draw execution.
+     * When enabled, CoreDrawHandler records commands instead of issuing
+     * immediate draws. Commands are replayed in sorted pass order.
+     * Default: disabled (immediate mode for vanilla parity).
+     */
+    public void setDeferredMode(boolean enabled) {
+        this.deferredMode = enabled;
+    }
 
     // ── Stats ──
 

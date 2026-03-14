@@ -105,6 +105,15 @@ public final class CoreShaderProgram {
     public void setExtraVariantBits(int bits)  { this.extraVariantBits = bits; }
     public void clearExtraVariantBits()         { this.extraVariantBits = 0; }
 
+    /**
+     * Compute the shader variant key for the given format flags without binding.
+     * Used by the deferred draw system to capture which variant a draw would use.
+     */
+    public int computeVariantKey(boolean hasColor, boolean hasTexCoord,
+                                  boolean hasNormal, boolean hasLightMap) {
+        return ShaderVariants.computeKey(CoreStateTracker.INSTANCE, hasLightMap) | extraVariantBits;
+    }
+
     // Cached vertex attrib defaults — skip redundant glVertexAttrib* calls
     private float lastColorR = -1, lastColorG = -1, lastColorB = -1, lastColorA = -1;
     private int lastLightMapDummy = -1; // 0=not bound, 1=bound

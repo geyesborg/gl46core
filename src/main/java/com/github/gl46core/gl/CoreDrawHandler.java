@@ -1,6 +1,11 @@
 package com.github.gl46core.gl;
 
+import com.github.gl46core.api.render.FrameOrchestrator;
+import com.github.gl46core.api.render.deferred.DeferredVboAllocator;
+import com.github.gl46core.api.render.deferred.DrawCommand;
+import com.github.gl46core.api.render.deferred.DrawCommandBuffer;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
+import com.github.gl46core.api.translate.LegacyStateInterpreter;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.vertex.VertexFormat;
 import net.minecraft.client.renderer.vertex.VertexFormatElement;
@@ -196,33 +201,116 @@ public final class CoreDrawHandler {
         // Bind shader and upload UBO data
         CoreShaderProgram.INSTANCE.bind(hasColor, hasTexCoord, hasNormal, hasLightMap);
 
-        // Draw — convert GL_QUADS to GL_TRIANGLES since quads are removed in core profile
         int drawMode = bufferBuilder.getDrawMode();
-        if (drawMode == GL11.GL_QUADS) {
-            int quadCount = vertexCount / 4;
-            int indexCount = quadCount * 6;
 
-            int ebo = QuadIndexBuffer.ensure(quadCount);
-            GL45.glVertexArrayElementBuffer(vao, ebo);
-
-            GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
+        // Branch: deferred mode records command, immediate mode draws now
+        FrameOrchestrator orch = FrameOrchestrator.INSTANCE;
+        if (orch.isDeferredMode()) {
+            // Deferred path — append vertex data to frame allocator and record command
+            recordDeferredDraw(orch, vao, data, dataSize, stride, drawMode, vertexCount,
+                    hasColor, hasTexCoord, hasNormal, hasLightMap);
         } else {
-            GL11.glDrawArrays(drawMode, 0, vertexCount);
-        }
-        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+            // Immediate path — draw now, shadow-submit for statistics
+            if (drawMode == GL11.GL_QUADS) {
+                int quadCount = vertexCount / 4;
+                int indexCount = quadCount * 6;
+                int ebo = QuadIndexBuffer.ensure(quadCount);
+                GL45.glVertexArrayElementBuffer(vao, ebo);
+                GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
+            } else {
+                GL11.glDrawArrays(drawMode, 0, vertexCount);
+            }
+            com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
 
-        // Record submission in the RenderQueue for statistics and hook support.
-        // The draw already happened above (immediate mode); this is a shadow
-        // submission that gives the pass system visibility into what was drawn.
-        LegacyDrawTranslator.INSTANCE.translateDraw(
-            drawMode, vertexCount, 0,
-            hasColor, hasTexCoord, hasNormal, hasLightMap);
+            LegacyDrawTranslator.INSTANCE.translateDraw(
+                drawMode, vertexCount, 0,
+                hasColor, hasTexCoord, hasNormal, hasLightMap);
+        }
 
         } catch (Throwable t) {
             com.github.gl46core.GL46Core.LOGGER.error("[CoreDrawHandler] Exception during draw:", t);
         } finally {
             bufferBuilder.reset();
         }
+    }
+
+    /**
+     * Record a deferred draw command instead of issuing an immediate GL draw.
+     * Vertex data is appended to the frame VBO allocator, and a DrawCommand
+     * captures all state needed for sorted replay.
+     */
+    private static void recordDeferredDraw(FrameOrchestrator orch, int vao,
+                                            ByteBuffer data, int dataSize, int stride,
+                                            int drawMode, int vertexCount,
+                                            boolean hasColor, boolean hasTexCoord,
+                                            boolean hasNormal, boolean hasLightMap) {
+        DeferredVboAllocator allocator = orch.getDeferredVbo();
+        DrawCommandBuffer cmdBuffer = orch.getDrawCommandBuffer();
+
+        // Append vertex data to the frame allocator
+        data.position(0).limit(dataSize);
+        int vboOffset = allocator.append(data, dataSize);
+
+        // Compute draw mode and index count (quad→triangle conversion)
+        int finalDrawMode = drawMode;
+        int indexCount = 0;
+        int eboHandle = 0;
+        if (drawMode == GL11.GL_QUADS) {
+            int quadCount = vertexCount / 4;
+            indexCount = quadCount * 6;
+            eboHandle = QuadIndexBuffer.ensure(quadCount);
+            finalDrawMode = GL11.GL_TRIANGLES;
+        }
+
+        // Get shader variant key and texture state from CoreStateTracker
+        int variantKey = CoreShaderProgram.INSTANCE.computeVariantKey(
+                hasColor, hasTexCoord, hasNormal, hasLightMap);
+        int textureId = CoreStateTracker.INSTANCE.getBoundTexture2D();
+        int lightmapId = CoreStateTracker.INSTANCE.getLightmapTexture();
+
+        // Infer pass type and material from legacy state
+        LegacyStateInterpreter interp = LegacyStateInterpreter.INSTANCE;
+        com.github.gl46core.api.render.PassType passType = interp.inferPassType();
+        com.github.gl46core.api.render.MaterialData material = interp.inferMaterial(
+                hasColor, hasTexCoord, hasNormal, hasLightMap);
+        int materialIndex = LegacyDrawTranslator.INSTANCE.registerMaterialPublic(
+                material.getMaterialId(), material);
+
+        // Acquire and configure command
+        DrawCommand cmd = cmdBuffer.acquire();
+        cmd.configure(vao, vboOffset, vertexCount, indexCount,
+                finalDrawMode, eboHandle, variantKey,
+                textureId, lightmapId, materialIndex,
+                passType, 0L, // sort key computed below
+                hasColor, hasTexCoord, hasNormal, hasLightMap, stride);
+
+        // Capture GL state
+        cmd.captureBlendState(
+                CoreStateTracker.INSTANCE.isBlendEnabled(),
+                CoreStateTracker.INSTANCE.getBlendSrcRgb(),
+                CoreStateTracker.INSTANCE.getBlendDstRgb(),
+                CoreStateTracker.INSTANCE.getBlendSrcAlpha(),
+                CoreStateTracker.INSTANCE.getBlendDstAlpha());
+        cmd.captureDepthCullState(
+                CoreStateTracker.INSTANCE.isDepthTestEnabled(),
+                CoreStateTracker.INSTANCE.isDepthMaskEnabled(),
+                CoreStateTracker.INSTANCE.isCullFaceEnabled(),
+                GL11.GL_BACK);
+
+        // Build sort key (same logic as LegacyDrawTranslator)
+        int matId = material.getMaterialId() & 0xFF;
+        int subIdx = LegacyDrawTranslator.INSTANCE.getSubmissionCount();
+        if (passType.isTranslucent()) {
+            long key = ((long) 2 << 56) | ((long) matId << 48) | subIdx;
+            cmd.sortKey = key;
+        } else {
+            long key = ((long) matId << 48) | subIdx;
+            cmd.sortKey = key;
+        }
+
+        // Record profiler stats
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordPassDrawCount(passType, 1);
     }
 
     /**

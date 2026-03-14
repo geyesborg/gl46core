@@ -144,6 +144,14 @@ public final class LegacyDrawTranslator {
         return idx;
     }
 
+    /**
+     * Public wrapper for material registration — used by the deferred draw
+     * system which records commands outside the normal translateDraw path.
+     */
+    public int registerMaterialPublic(int matHash, MaterialData material) {
+        return registerMaterial(matHash, material);
+    }
+
     public int getSubmissionCount()    { return submissionIndex; }
     public int getUniqueMaterialCount() { return nextMaterialIndex; }
 }
