@@ -40,14 +40,13 @@ public abstract class MixinModelRenderer {
     @Shadow @Final public List<ModelRenderer> childModels;
 
     /**
-     * Draw all model boxes directly through the Tessellator pipeline.
-     * This replaces glCallList with actual geometry submission.
+     * Draw all model boxes from a cached VBO — compiled once, reused every frame.
+     * Replaces the vanilla per-face Tessellator.draw() path (6 draws per cube)
+     * with a single draw call for all cubes in this ModelRenderer.
      */
     private void drawBoxes(float scale) {
-        BufferBuilder buf = Tessellator.getInstance().getBuffer();
-        for (int i = 0; i < this.cubeList.size(); i++) {
-            this.cubeList.get(i).render(buf, scale);
-        }
+        com.github.gl46core.gl.ModelGeometryCache.INSTANCE.drawCached(
+                (ModelRenderer)(Object) this, this.cubeList, scale);
     }
 
     /**

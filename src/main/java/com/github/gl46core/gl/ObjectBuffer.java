@@ -33,11 +33,13 @@ public final class ObjectBuffer {
 
     public static final int OBJECT_DATA_SIZE = 128; // 2x mat4
     public static final int SSBO_BINDING = 3;       // must match shader layout
-    private static final int MAX_OBJECTS = 4096;
+    private static final int INITIAL_CAPACITY = 1024;
 
     private GpuBuffer buffer;
     private ByteBuffer staging;
     private int objectCount;
+    private int capacity;
+    private int highWaterMark;
     private int uboAlignment;
     private int alignedStride;  // UBO mode: padded to alignment. SSBO mode: 128.
     private boolean initialized;
@@ -56,7 +58,8 @@ public final class ObjectBuffer {
         alignedStride = ssboMode ? OBJECT_DATA_SIZE
                 : ((OBJECT_DATA_SIZE + uboAlignment - 1) / uboAlignment) * uboAlignment;
 
-        long totalSize = (long) alignedStride * MAX_OBJECTS;
+        capacity = INITIAL_CAPACITY;
+        long totalSize = (long) alignedStride * capacity;
 
         // Use SSBO-capable buffer (GL_DYNAMIC_STORAGE_BIT works for both UBO and SSBO)
         buffer = GpuBufferPool.INSTANCE.createDynamicSSBO(totalSize);
@@ -76,6 +79,7 @@ public final class ObjectBuffer {
      * @return the object index (used as gl_BaseInstance or with {@link #bindObject(int)})
      */
     public int submitTransform(Matrix4f mvp, Matrix4f mv) {
+        if (objectCount >= capacity) grow();
         int idx = objectCount++;
         int offset = idx * alignedStride;
         mvp.get(offset, staging);
@@ -89,9 +93,34 @@ public final class ObjectBuffer {
      */
     public void upload() {
         if (objectCount == 0) return;
+        if (objectCount > highWaterMark) highWaterMark = objectCount;
         int size = objectCount * alignedStride;
         staging.position(0).limit(size);
         buffer.upload(staging, 0, size);
+    }
+
+    /**
+     * Grow capacity by 2x. Recreates the immutable GPU buffer.
+     */
+    private void grow() {
+        int newCapacity = capacity * 2;
+        long newSize = (long) alignedStride * newCapacity;
+
+        GpuBuffer newBuf = GpuBufferPool.INSTANCE.createDynamicSSBO(newSize);
+        if (buffer != null) {
+            GpuBufferPool.INSTANCE.destroy(buffer);
+        }
+        buffer = newBuf;
+
+        ByteBuffer newStaging = ByteBuffer.allocateDirect((int) newSize).order(ByteOrder.nativeOrder());
+        if (staging != null) {
+            int oldDataSize = objectCount * alignedStride;
+            staging.position(0).limit(oldDataSize);
+            newStaging.put(staging);
+            newStaging.clear();
+        }
+        staging = newStaging;
+        capacity = newCapacity;
     }
 
     // ── SSBO mode (preferred) ──
@@ -133,9 +162,11 @@ public final class ObjectBuffer {
 
     // ── Accessors ──
 
-    public boolean isSsboMode()   { return ssboMode; }
-    public int getObjectCount()   { return objectCount; }
-    public int getAlignedStride() { return alignedStride; }
-    public int getUboAlignment()  { return uboAlignment; }
-    public GpuBuffer getBuffer()  { return buffer; }
+    public boolean isSsboMode()    { return ssboMode; }
+    public int getObjectCount()    { return objectCount; }
+    public int getCapacity()       { return capacity; }
+    public int getHighWaterMark()  { return highWaterMark; }
+    public int getAlignedStride()  { return alignedStride; }
+    public int getUboAlignment()   { return uboAlignment; }
+    public GpuBuffer getBuffer()   { return buffer; }
 }

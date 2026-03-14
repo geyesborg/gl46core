@@ -56,5 +56,9 @@ public final class DebugOverlayHandler {
             event.getRight().add(String.format("MegaBuffer: %.1f%% full | %d regions | %d free segs",
                     mega.getFillPercent(), mega.getActiveRegions(), mega.getFreeRegionCount()));
         }
+
+        com.github.gl46core.gl.ModelGeometryCache mc = com.github.gl46core.gl.ModelGeometryCache.INSTANCE;
+        event.getRight().add(String.format("ModelCache: %d cached | %d hits | %d misses | %d draws",
+                mc.getCacheSize(), mc.getLastHits(), mc.getLastMisses(), mc.getLastDraws()));
     }
 }

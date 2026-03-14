@@ -20,6 +20,7 @@
     "MixinActiveRenderInfo",
     "MixinEntityRenderer",
     "AccessorVertexBuffer",
+    "AccessorModelBox",
     "MixinVertexBuffer"
   ],
   "mixins": [],

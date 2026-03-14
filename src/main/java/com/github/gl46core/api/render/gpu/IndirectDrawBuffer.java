@@ -43,6 +43,7 @@ public final class IndirectDrawBuffer {
     private int capacity;       // max commands
     private int count;          // active commands
     private boolean indexed;    // elements vs arrays
+    private int highWaterMark;  // peak command count across all frames
 
     public IndirectDrawBuffer() {}
 
@@ -89,7 +90,8 @@ public final class IndirectDrawBuffer {
      * @return command index
      */
     public int addArraysCommand(int vertexCount, int firstVertex, int baseInstance) {
-        if (count >= capacity || indexed) return -1;
+        if (indexed) return -1;
+        if (count >= capacity) grow();
         int index = count++;
         int offset = index * ARRAYS_COMMAND_SIZE;
 
@@ -111,7 +113,8 @@ public final class IndirectDrawBuffer {
      * @return command index
      */
     public int addElementsCommand(int indexCount, int firstIndex, int baseVertex, int baseInstance) {
-        if (count >= capacity || !indexed) return -1;
+        if (!indexed) return -1;
+        if (count >= capacity) grow();
         int index = count++;
         int offset = index * ELEMENTS_COMMAND_STRIDE;
 
@@ -129,6 +132,7 @@ public final class IndirectDrawBuffer {
      */
     public void flush() {
         if (count == 0) return;
+        if (count > highWaterMark) highWaterMark = count;
         long size = (long) count * commandStride;
         stagingBuffer.position(0).limit((int) size);
         gpuBuffer.upload(stagingBuffer, 0, size);
@@ -178,7 +182,34 @@ public final class IndirectDrawBuffer {
         }
     }
 
-    public int     getCount()    { return count; }
-    public int     getCapacity() { return capacity; }
-    public boolean isIndexed()   { return indexed; }
+    /**
+     * Grow capacity by 2x. Recreates the immutable GPU buffer.
+     */
+    private void grow() {
+        int newCapacity = capacity * 2;
+        long newSize = (long) newCapacity * commandStride;
+
+        // Recreate GPU buffer (immutable storage cannot be resized)
+        GpuBuffer newBuf = GpuBufferPool.INSTANCE.createDynamicSSBO(newSize);
+        if (gpuBuffer != null) {
+            GpuBufferPool.INSTANCE.destroy(gpuBuffer);
+        }
+        gpuBuffer = newBuf;
+
+        // Grow staging buffer, preserving existing data
+        ByteBuffer newStaging = ByteBuffer.allocateDirect((int) newSize).order(ByteOrder.nativeOrder());
+        if (stagingBuffer != null) {
+            int oldDataSize = count * commandStride;
+            stagingBuffer.position(0).limit(oldDataSize);
+            newStaging.put(stagingBuffer);
+            newStaging.clear();
+        }
+        stagingBuffer = newStaging;
+        capacity = newCapacity;
+    }
+
+    public int     getCount()         { return count; }
+    public int     getCapacity()      { return capacity; }
+    public int     getHighWaterMark() { return highWaterMark; }
+    public boolean isIndexed()        { return indexed; }
 }

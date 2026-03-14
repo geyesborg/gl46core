@@ -44,6 +44,9 @@ public class MixinEntityRenderer {
 
         // Reset terrain queue stats
         com.github.gl46core.gl.TerrainDrawCollector.INSTANCE.resetFrameStats();
+
+        // Tick model geometry cache (eviction + stats)
+        com.github.gl46core.gl.ModelGeometryCache.INSTANCE.tick();
     }
 
     /**
