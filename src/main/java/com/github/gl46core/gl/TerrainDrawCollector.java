@@ -7,6 +7,7 @@ import com.github.gl46core.api.translate.LegacyStateInterpreter;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL42;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -156,8 +157,19 @@ public final class TerrainDrawCollector {
         }
         objBuf.upload(); // ONE bulk upload to GPU
 
+        // Request SSBO shader variant if available
+        boolean useSSBO = objBuf.isSsboMode();
+        if (useSSBO) {
+            shader.setExtraVariantBits(ShaderVariants.BIT_OBJECT_SSBO);
+        }
+
         // Bind shader variant + upload scene/material UBOs once
         shader.bind(true, true, false, true);
+
+        if (useSSBO) {
+            shader.clearExtraVariantBits();
+            objBuf.bindAsSSBO(); // bind ONCE for entire layer
+        }
 
         // Configure terrain VAO format once (DSA), then only swap VBO per chunk
         CoreVboDrawHandler.ensureTerrainVaoDSA();
@@ -166,26 +178,39 @@ public final class TerrainDrawCollector {
         int ebo = QuadIndexBuffer.ensure(maxVerts / 4);
         CoreVboDrawHandler.bindTerrainEbo(ebo);
 
-        // ── Pass 2: Issue draws with per-chunk binding range (no data transfer) ──
-        for (int i = 0; i < count; i++) {
-            DrawPacket p = packets[i];
+        // ── Pass 2: Issue draws ──
+        if (useSSBO) {
+            // SSBO path: gl_BaseInstance indexes into ObjectSSBO — no per-draw binding
+            for (int i = 0; i < count; i++) {
+                DrawPacket p = packets[i];
+                CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
 
-            // Fast VBO swap — ONE DSA call
-            CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
+                int vertexCount = p.getVertexCount();
+                int indexCount = (vertexCount / 4) * 6;
+                // baseInstance = i → shader reads gl46_objects[gl_BaseInstance]
+                GL42.glDrawElementsInstancedBaseVertexBaseInstance(
+                        GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0L,
+                        1, 0, i);
 
-            // Select this chunk's transform slice (glBindBufferRange — state change only)
-            objBuf.bindObject(i);
+                RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+            }
+            objBuf.unbindSSBO();
+        } else {
+            // UBO range fallback: per-draw glBindBufferRange
+            for (int i = 0; i < count; i++) {
+                DrawPacket p = packets[i];
+                CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
+                objBuf.bindObject(i);
 
-            // Draw — GL_QUADS→GL_TRIANGLES via pre-bound index buffer
-            int vertexCount = p.getVertexCount();
-            int indexCount = (vertexCount / 4) * 6;
-            GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
+                int vertexCount = p.getVertexCount();
+                int indexCount = (vertexCount / 4) * 6;
+                GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
 
-            RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+                RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+            }
+            objBuf.restorePerObjectBinding();
         }
 
-        // Restore original PerObject UBO binding for non-terrain rendering
-        objBuf.restorePerObjectBinding();
         shader.invalidateMatrices();
 
         // Mark terrain VAO as unbound for non-terrain paths

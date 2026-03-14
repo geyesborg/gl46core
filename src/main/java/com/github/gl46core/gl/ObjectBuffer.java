@@ -5,39 +5,43 @@ import com.github.gl46core.api.render.gpu.GpuBufferPool;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL31;
+import org.lwjgl.opengl.GL43;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * Manages a large UBO for per-draw object transforms (MVP + MV).
+ * Manages a large buffer for per-draw object transforms (MVP + MV).
  *
- * Instead of uploading 128 bytes per draw via glNamedBufferSubData,
- * all transforms are packed into a staging buffer and uploaded in ONE
- * bulk call. Per-draw binding uses glBindBufferRange to select the
- * 128-byte slice for each object — a state change, not a data transfer.
+ * Supports two binding modes:
+ *   - <b>SSBO mode</b> (preferred): buffer bound to SSBO binding point 3.
+ *     Shader reads transforms via {@code gl46_objects[gl_BaseInstance]}.
+ *     Tight 128-byte packing, no alignment waste.
+ *   - <b>UBO range mode</b> (fallback): per-draw glBindBufferRange on
+ *     UBO binding point 1. Requires UBO offset alignment padding.
  *
- * Each object occupies an aligned stride (rounded up to
- * GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, typically 256 bytes on NVIDIA).
+ * All transforms are packed into a staging buffer and uploaded in ONE
+ * bulk call via glNamedBufferSubData.
  *
- * Layout per object (std140):
+ * Layout per object (std430 for SSBO, std140 compatible):
  *   mat4 mvp    (64 bytes, offset 0)
  *   mat4 mv     (64 bytes, offset 64)
- *   [padding to alignment]
  */
 public final class ObjectBuffer {
 
     public static final ObjectBuffer INSTANCE = new ObjectBuffer();
 
     public static final int OBJECT_DATA_SIZE = 128; // 2x mat4
+    public static final int SSBO_BINDING = 3;       // must match shader layout
     private static final int MAX_OBJECTS = 4096;
 
     private GpuBuffer buffer;
     private ByteBuffer staging;
     private int objectCount;
     private int uboAlignment;
-    private int alignedStride;
+    private int alignedStride;  // UBO mode: padded to alignment. SSBO mode: 128.
     private boolean initialized;
+    private boolean ssboMode;   // true = SSBO path, false = UBO range fallback
 
     private ObjectBuffer() {}
 
@@ -46,10 +50,16 @@ public final class ObjectBuffer {
         initialized = true;
 
         uboAlignment = GL11.glGetInteger(GL31.GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT);
-        alignedStride = ((OBJECT_DATA_SIZE + uboAlignment - 1) / uboAlignment) * uboAlignment;
+
+        // SSBO mode: tight packing. UBO mode: aligned stride.
+        ssboMode = true;
+        alignedStride = ssboMode ? OBJECT_DATA_SIZE
+                : ((OBJECT_DATA_SIZE + uboAlignment - 1) / uboAlignment) * uboAlignment;
+
         long totalSize = (long) alignedStride * MAX_OBJECTS;
 
-        buffer = GpuBufferPool.INSTANCE.createDynamicUBO(totalSize);
+        // Use SSBO-capable buffer (GL_DYNAMIC_STORAGE_BIT works for both UBO and SSBO)
+        buffer = GpuBufferPool.INSTANCE.createDynamicSSBO(totalSize);
         staging = ByteBuffer.allocateDirect((int) totalSize).order(ByteOrder.nativeOrder());
     }
 
@@ -63,7 +73,7 @@ public final class ObjectBuffer {
     /**
      * Pack a transform into the staging buffer.
      *
-     * @return the object index (used with {@link #bindObject(int)})
+     * @return the object index (used as gl_BaseInstance or with {@link #bindObject(int)})
      */
     public int submitTransform(Matrix4f mvp, Matrix4f mv) {
         int idx = objectCount++;
@@ -75,7 +85,7 @@ public final class ObjectBuffer {
 
     /**
      * Upload all packed transforms to the GPU in ONE call.
-     * Call after all submitTransform() calls, before any bindObject() calls.
+     * Call after all submitTransform() calls, before drawing.
      */
     public void upload() {
         if (objectCount == 0) return;
@@ -84,9 +94,28 @@ public final class ObjectBuffer {
         buffer.upload(staging, 0, size);
     }
 
+    // ── SSBO mode (preferred) ──
+
+    /**
+     * Bind the entire buffer as SSBO at binding point 3.
+     * Shader indexes via gl_BaseInstance — no per-draw binding needed.
+     */
+    public void bindAsSSBO() {
+        buffer.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, SSBO_BINDING);
+    }
+
+    /**
+     * Unbind the SSBO after terrain rendering.
+     */
+    public void unbindSSBO() {
+        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, SSBO_BINDING, 0);
+    }
+
+    // ── UBO range mode (fallback) ──
+
     /**
      * Bind the given object's transform slice to UBO binding point 1 (PerObject).
-     * This is a state change only — no data transfer.
+     * Only used in UBO fallback mode. This is a state change only.
      */
     public void bindObject(int index) {
         buffer.bindRange(GL31.GL_UNIFORM_BUFFER, 1,
@@ -104,6 +133,7 @@ public final class ObjectBuffer {
 
     // ── Accessors ──
 
+    public boolean isSsboMode()   { return ssboMode; }
     public int getObjectCount()   { return objectCount; }
     public int getAlignedStride() { return alignedStride; }
     public int getUboAlignment()  { return uboAlignment; }

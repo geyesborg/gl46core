@@ -98,6 +98,13 @@ public final class CoreShaderProgram {
     // Track current program to skip redundant glUseProgram calls
     private int lastProgramId = 0;
 
+    // Extra variant bits ORed into the key during bind() — used by terrain
+    // to request the SSBO variant (BIT_OBJECT_SSBO) without changing state.
+    private int extraVariantBits = 0;
+
+    public void setExtraVariantBits(int bits)  { this.extraVariantBits = bits; }
+    public void clearExtraVariantBits()         { this.extraVariantBits = 0; }
+
     // Cached vertex attrib defaults — skip redundant glVertexAttrib* calls
     private float lastColorR = -1, lastColorG = -1, lastColorB = -1, lastColorA = -1;
     private int lastLightMapDummy = -1; // 0=not bound, 1=bound
@@ -175,8 +182,8 @@ public final class CoreShaderProgram {
 
         CoreStateTracker state = CoreStateTracker.INSTANCE;
 
-        // Select shader variant based on current GL state
-        int variantKey = ShaderVariants.computeKey(state, hasLightMap);
+        // Select shader variant based on current GL state + extra bits (e.g. SSBO)
+        int variantKey = ShaderVariants.computeKey(state, hasLightMap) | extraVariantBits;
         int programId = ShaderVariants.getProgram(variantKey);
         if (programId == 0) return;
 

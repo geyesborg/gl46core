@@ -35,6 +35,7 @@ public final class ShaderVariants {
     public static final int BIT_LIGHTMAP_GLB = 1 << 5;
     public static final int BIT_TEXGEN       = 1 << 6;
     public static final int BIT_CLIP_PLANES  = 1 << 7;
+    public static final int BIT_OBJECT_SSBO  = 1 << 8;
 
     // program cache: variant key → GL program ID (0 = failed)
     private static final ConcurrentHashMap<Integer, Integer> cache = new ConcurrentHashMap<>();
@@ -99,6 +100,7 @@ public final class ShaderVariants {
         if ((key & BIT_LIGHTMAP_GLB) != 0) defines.append("#define LIGHTMAP_GLOBAL\n");
         if ((key & BIT_TEXGEN) != 0)       defines.append("#define TEXGEN_ENABLED\n");
         if ((key & BIT_CLIP_PLANES) != 0)  defines.append("#define CLIP_PLANES_ENABLED\n");
+        if ((key & BIT_OBJECT_SSBO) != 0)  defines.append("#define OBJECT_SSBO\n");
 
         String defs = defines.toString();
         String vertSrc = defs + VERT_TEMPLATE;
@@ -146,6 +148,7 @@ public final class ShaderVariants {
         if ((key & BIT_LIGHTMAP_GLB) != 0) sb.append("lmGlb ");
         if ((key & BIT_TEXGEN) != 0)       sb.append("texgen ");
         if ((key & BIT_CLIP_PLANES) != 0)  sb.append("clip ");
+        if ((key & BIT_OBJECT_SSBO) != 0)   sb.append("ssbo ");
         return sb.toString().trim();
     }
 
@@ -231,6 +234,17 @@ layout(std140, binding = 2) uniform PerMaterial {
     vec4 uClipPlane[6];         // offset 128
 };
 
+#ifdef OBJECT_SSBO
+// ── Object SSBO: per-draw transforms indexed by gl_BaseInstance ──
+struct ObjectData {
+    mat4 mvp;   // model-view-projection
+    mat4 mv;    // model-view
+};
+layout(std430, binding = 3) readonly buffer ObjectSSBO {
+    ObjectData gl46_objects[];
+};
+#endif
+
 // ── Varyings ──
 out vec4 vColor;
 out vec2 vTexCoord;
@@ -239,14 +253,23 @@ out vec3 vNormal;
 out float vFogDist;
 
 void main() {
-    gl_Position = uModelViewProjection * vec4(aPosition, 1.0);
+    // Select transform source: SSBO (queued path) or UBO (immediate path)
+#ifdef OBJECT_SSBO
+    mat4 gl46_mvp = gl46_objects[gl_BaseInstance].mvp;
+    mat4 gl46_mv  = gl46_objects[gl_BaseInstance].mv;
+#else
+    mat4 gl46_mvp = uModelViewProjection;
+    mat4 gl46_mv  = uModelView;
+#endif
+
+    gl_Position = gl46_mvp * vec4(aPosition, 1.0);
 
 #ifdef NEED_EYE_POS
-    vec4 eyePos = uModelView * vec4(aPosition, 1.0);
+    vec4 eyePos = gl46_mv * vec4(aPosition, 1.0);
 #endif
 
 #ifdef NEED_NORMAL
-    vec3 eyeNormal = mat3(uModelView) * aNormal;
+    vec3 eyeNormal = mat3(gl46_mv) * aNormal;
     bool hasRealNormal = dot(aNormal, aNormal) > 0.0;
     vNormal = hasRealNormal ? eyeNormal : vec3(0.0, 0.0, 1.0);
 #else
