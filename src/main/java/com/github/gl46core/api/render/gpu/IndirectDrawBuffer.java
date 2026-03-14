@@ -75,6 +75,9 @@ public final class IndirectDrawBuffer {
      */
     public void clear() {
         count = 0;
+        if (stagingBuffer != null) {
+            stagingBuffer.clear(); // reset position=0, limit=capacity
+        }
     }
 
     /**

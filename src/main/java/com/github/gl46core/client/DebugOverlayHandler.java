@@ -45,15 +45,16 @@ public final class DebugOverlayHandler {
         event.getRight().add(String.format("Terrain queue: %d chunks | %d verts | %d layers sorted",
                 t.getFrameChunksQueued(), t.getFrameVerticesQueued(), t.getFrameSortedLayers()));
 
-        com.github.gl46core.gl.ObjectBuffer ob = com.github.gl46core.gl.ObjectBuffer.INSTANCE;
-        if (ob.getAlignedStride() > 0) {
-            int objCount = t.getFrameChunksQueued();
-            long bulkBytes = (long) objCount * ob.getAlignedStride();
-            String bulkStr = bulkBytes < 1024 ? bulkBytes + "B"
-                    : String.format("%.1fKB", bulkBytes / 1024.0);
-            String mode = ob.isSsboMode() ? "SSBO" : "UBO-range";
-            event.getRight().add(String.format("ObjectBuffer [%s]: stride=%d | bulk=%s | 2 GL/chunk",
-                    mode, ob.getAlignedStride(), bulkStr));
+        int mdiLayers = t.getFrameMdiLayers();
+        int ssboLayers = t.getFrameSsboLayers();
+        int uboLayers = t.getFrameSortedLayers() - mdiLayers - ssboLayers;
+        event.getRight().add(String.format("Draw path: MDI=%d | SSBO=%d | UBO=%d layers",
+                mdiLayers, ssboLayers, uboLayers));
+
+        com.github.gl46core.gl.MegaTerrainBuffer mega = com.github.gl46core.gl.MegaTerrainBuffer.INSTANCE;
+        if (mega.isInitialized()) {
+            event.getRight().add(String.format("MegaBuffer: %.1f%% full | %d regions | %d free segs",
+                    mega.getFillPercent(), mega.getActiveRegions(), mega.getFreeRegionCount()));
         }
     }
 }

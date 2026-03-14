@@ -11,6 +11,8 @@ import net.minecraft.client.renderer.VboRenderList;
 import net.minecraft.client.renderer.chunk.RenderChunk;
 import net.minecraft.client.renderer.vertex.VertexBuffer;
 import net.minecraft.entity.Entity;
+import com.github.gl46core.gl.IMegaBufferAccess;
+import com.github.gl46core.gl.MegaTerrainBuffer;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.math.BlockPos;
 import org.lwjgl.opengl.GL11;
@@ -75,6 +77,8 @@ public abstract class MixinVboRenderList extends ChunkRenderContainer {
             return;
         }
 
+        MegaTerrainBuffer.INSTANCE.ensureInitialized();
+
         TerrainDrawCollector collector = TerrainDrawCollector.INSTANCE;
         collector.begin();
 
@@ -94,10 +98,16 @@ public abstract class MixinVboRenderList extends ChunkRenderContainer {
             float cx = tx + 8, cy = ty + 8, cz = tz + 8;
             float distSq = cx * cx + cy * cy + cz * cz;
 
+            // Check mega-buffer region for MDI baseVertex
+            IMegaBufferAccess megaAccess = (IMegaBufferAccess) vbo;
+            int baseVertex = megaAccess.gl46core$hasMegaRegion()
+                    ? (int)(megaAccess.gl46core$getMegaOffset() / CoreVboDrawHandler.TERRAIN_STRIDE)
+                    : -1;
+
             collector.submit(passType, vboId, vertexCount,
                     tx, ty, tz,
                     pos.getX(), pos.getY(), pos.getZ(),
-                    distSq);
+                    distSq, baseVertex);
         }
 
         collector.sortAndExecute();

@@ -57,6 +57,9 @@ public final class DrawPacket {
     // ── Chunk reference (terrain-specific, 0 for non-terrain) ──
     private int chunkX, chunkY, chunkZ;
 
+    // ── Mega-buffer (terrain MDI) ──
+    private int baseVertex = -1;  // vertex offset in MegaTerrainBuffer, or -1 if not available
+
     public DrawPacket() {}
 
     /** Reset all fields for reuse from pool. */
@@ -74,6 +77,7 @@ public final class DrawPacket {
         distanceSq = 0;
         sourceSystem = 0;
         chunkX = 0; chunkY = 0; chunkZ = 0;
+        baseVertex = -1;
     }
 
     // ── Setters ──
@@ -100,6 +104,7 @@ public final class DrawPacket {
     public void setDistanceSq(float d)                { this.distanceSq = d; }
     public void setSourceSystem(int src)              { this.sourceSystem = src; }
     public void setChunkPos(int x, int y, int z)      { this.chunkX = x; this.chunkY = y; this.chunkZ = z; }
+    public void setBaseVertex(int bv)                    { this.baseVertex = bv; }
 
     /** Build front-to-back sort key for opaque geometry. */
     public void buildOpaqueSortKey(int layer, int materialId) {
@@ -136,4 +141,6 @@ public final class DrawPacket {
     public int getChunkX()               { return chunkX; }
     public int getChunkY()               { return chunkY; }
     public int getChunkZ()               { return chunkZ; }
+    public int getBaseVertex()            { return baseVertex; }
+    public boolean hasMegaRegion()        { return baseVertex >= 0; }
 }

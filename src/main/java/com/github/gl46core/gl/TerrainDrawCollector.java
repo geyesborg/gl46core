@@ -5,6 +5,7 @@ import com.github.gl46core.api.render.DrawPacket;
 import com.github.gl46core.api.render.PassType;
 import com.github.gl46core.api.translate.LegacyStateInterpreter;
 import org.joml.Matrix4f;
+import com.github.gl46core.api.render.gpu.IndirectDrawBuffer;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL42;
@@ -44,6 +45,11 @@ public final class TerrainDrawCollector {
     private int frameChunksQueued;
     private int frameVerticesQueued;
     private int frameSortedLayers;
+    private int frameMdiLayers;       // how many layers used MDI path
+    private int frameSsboLayers;      // how many layers used SSBO per-draw path
+
+    // Indirect draw command buffer (reused across frames)
+    private IndirectDrawBuffer indirectBuf;
 
     private TerrainDrawCollector() {
         packets = new DrawPacket[INITIAL_CAPACITY];
@@ -75,11 +81,12 @@ public final class TerrainDrawCollector {
      * @param chunkY      chunk block position Y
      * @param chunkZ      chunk block position Z
      * @param distanceSq  squared distance from camera to chunk center
+     * @param baseVertex  vertex offset in MegaTerrainBuffer, or -1 if not available
      */
     public void submit(PassType passType, int vboId, int vertexCount,
                        float translateX, float translateY, float translateZ,
                        int chunkX, int chunkY, int chunkZ,
-                       float distanceSq) {
+                       float distanceSq, int baseVertex) {
         if (vertexCount <= 0) return;
         if (count >= packets.length) grow();
 
@@ -93,6 +100,7 @@ public final class TerrainDrawCollector {
         p.setChunkPos(chunkX, chunkY, chunkZ);
         p.setDistanceSq(distanceSq);
         p.setSourceSystem(DrawPacket.SOURCE_TERRAIN);
+        p.setBaseVertex(baseVertex);
 
         if (passType.isTranslucent()) {
             p.buildTranslucentSortKey(passType.getDefaultOrder(), layerMaterialHash & 0xFF);
@@ -142,10 +150,10 @@ public final class TerrainDrawCollector {
         baseProj.set(ms.getProjection());
         baseMV.set(ms.getModelView());
 
-        // ── Pass 1: Pack all transforms into ObjectBuffer ──
-        // Compute per-chunk MVP/MV and find max vertex count in one pass
+        // ── Pass 1: Pack transforms + check mega-buffer availability ──
         objBuf.begin();
         int maxVerts = 0;
+        boolean allHaveMega = true;
         for (int i = 0; i < count; i++) {
             DrawPacket p = packets[i];
             baseMV.translate(p.getTranslateX(), p.getTranslateY(), p.getTranslateZ(), chunkMV);
@@ -154,11 +162,14 @@ public final class TerrainDrawCollector {
 
             int v = p.getVertexCount();
             if (v > maxVerts) maxVerts = v;
+            if (!p.hasMegaRegion()) allHaveMega = false;
         }
         objBuf.upload(); // ONE bulk upload to GPU
 
-        // Request SSBO shader variant if available
         boolean useSSBO = objBuf.isSsboMode();
+        boolean useMDI = useSSBO && allHaveMega;
+
+        // Request SSBO shader variant if using SSBO or MDI
         if (useSSBO) {
             shader.setExtraVariantBits(ShaderVariants.BIT_OBJECT_SSBO);
         }
@@ -168,10 +179,10 @@ public final class TerrainDrawCollector {
 
         if (useSSBO) {
             shader.clearExtraVariantBits();
-            objBuf.bindAsSSBO(); // bind ONCE for entire layer
+            objBuf.bindAsSSBO();
         }
 
-        // Configure terrain VAO format once (DSA), then only swap VBO per chunk
+        // Configure terrain VAO format once (DSA)
         CoreVboDrawHandler.ensureTerrainVaoDSA();
 
         // EBO: ensure + bind to VAO via DSA (all terrain is GL_QUADS)
@@ -179,43 +190,103 @@ public final class TerrainDrawCollector {
         CoreVboDrawHandler.bindTerrainEbo(ebo);
 
         // ── Pass 2: Issue draws ──
-        if (useSSBO) {
-            // SSBO path: gl_BaseInstance indexes into ObjectSSBO — no per-draw binding
-            for (int i = 0; i < count; i++) {
-                DrawPacket p = packets[i];
-                CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
-
-                int vertexCount = p.getVertexCount();
-                int indexCount = (vertexCount / 4) * 6;
-                // baseInstance = i → shader reads gl46_objects[gl_BaseInstance]
-                GL42.glDrawElementsInstancedBaseVertexBaseInstance(
-                        GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0L,
-                        1, 0, i);
-
-                RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
-            }
-            objBuf.unbindSSBO();
+        if (useMDI) {
+            // ★ MDI path: bind mega-buffer ONCE, issue ONE multi-draw indirect call
+            executeMDI(objBuf);
+        } else if (useSSBO) {
+            // SSBO per-draw path: VBO swap + draw with gl_BaseInstance
+            executeSsboPerDraw();
         } else {
-            // UBO range fallback: per-draw glBindBufferRange
-            for (int i = 0; i < count; i++) {
-                DrawPacket p = packets[i];
-                CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
-                objBuf.bindObject(i);
-
-                int vertexCount = p.getVertexCount();
-                int indexCount = (vertexCount / 4) * 6;
-                GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
-
-                RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
-            }
-            objBuf.restorePerObjectBinding();
+            // UBO range fallback: VBO swap + bindBufferRange + draw
+            executeUboFallback(objBuf);
         }
+
+        if (useSSBO) objBuf.unbindSSBO();
+        else objBuf.restorePerObjectBinding();
 
         shader.invalidateMatrices();
 
         // Mark terrain VAO as unbound for non-terrain paths
         CoreVboDrawHandler.setVboBound(false);
         CoreVboDrawHandler.setTerrainVaoUnbound();
+    }
+
+    /**
+     * ★ Multi-Draw Indirect path: 1 GL call per layer.
+     * All chunk geometry is in MegaTerrainBuffer. Builds DrawElementsIndirect
+     * commands with baseVertex (mega-buffer offset) and baseInstance (SSBO index).
+     */
+    private void executeMDI(ObjectBuffer objBuf) {
+        frameMdiLayers++;
+
+        if (indirectBuf == null) {
+            indirectBuf = new IndirectDrawBuffer();
+            indirectBuf.initElements(4096);
+        }
+        indirectBuf.clear();
+
+        // Bind mega-buffer to terrain VAO (ONE call for entire layer)
+        MegaTerrainBuffer.INSTANCE.bindToTerrainVao();
+
+        // Build indirect draw commands
+        int totalVerts = 0;
+        for (int i = 0; i < count; i++) {
+            DrawPacket p = packets[i];
+            int vertexCount = p.getVertexCount();
+            int indexCount = (vertexCount / 4) * 6;
+            indirectBuf.addElementsCommand(
+                    indexCount,     // count (indices)
+                    0,              // firstIndex (reuse same EBO pattern)
+                    p.getBaseVertex(), // baseVertex (offset in mega-buffer)
+                    i               // baseInstance (SSBO object index)
+            );
+            totalVerts += vertexCount;
+        }
+
+        // Upload commands + issue ONE multi-draw indirect call
+        indirectBuf.flush();
+        indirectBuf.multiDrawElements(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT);
+        indirectBuf.unbind();
+
+        RenderProfiler.INSTANCE.recordDrawCall(totalVerts);
+    }
+
+    /**
+     * SSBO per-draw path: gl_BaseInstance indexes into ObjectSSBO.
+     * Still swaps VBO per chunk but no per-draw UBO binding.
+     */
+    private void executeSsboPerDraw() {
+        frameSsboLayers++;
+
+        for (int i = 0; i < count; i++) {
+            DrawPacket p = packets[i];
+            CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
+
+            int vertexCount = p.getVertexCount();
+            int indexCount = (vertexCount / 4) * 6;
+            GL42.glDrawElementsInstancedBaseVertexBaseInstance(
+                    GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0L,
+                    1, 0, i);
+
+            RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+        }
+    }
+
+    /**
+     * UBO range fallback: per-draw glBindBufferRange + VBO swap.
+     */
+    private void executeUboFallback(ObjectBuffer objBuf) {
+        for (int i = 0; i < count; i++) {
+            DrawPacket p = packets[i];
+            CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
+            objBuf.bindObject(i);
+
+            int vertexCount = p.getVertexCount();
+            int indexCount = (vertexCount / 4) * 6;
+            GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
+
+            RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
+        }
     }
 
     public int getCount() { return count; }
@@ -227,11 +298,15 @@ public final class TerrainDrawCollector {
         frameChunksQueued = 0;
         frameVerticesQueued = 0;
         frameSortedLayers = 0;
+        frameMdiLayers = 0;
+        frameSsboLayers = 0;
     }
 
     public int getFrameChunksQueued()   { return frameChunksQueued; }
     public int getFrameVerticesQueued() { return frameVerticesQueued; }
     public int getFrameSortedLayers()   { return frameSortedLayers; }
+    public int getFrameMdiLayers()      { return frameMdiLayers; }
+    public int getFrameSsboLayers()     { return frameSsboLayers; }
 
     private void grow() {
         int newCap = packets.length * 2;

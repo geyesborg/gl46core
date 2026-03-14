@@ -19,7 +19,8 @@
     "MixinCloudRenderer",
     "MixinActiveRenderInfo",
     "MixinEntityRenderer",
-    "AccessorVertexBuffer"
+    "AccessorVertexBuffer",
+    "MixinVertexBuffer"
   ],
   "mixins": [],
   "server": [],

@@ -21,7 +21,7 @@ import org.lwjgl.opengl.GL45;
  */
 public final class CoreVboDrawHandler {
 
-    private static final int TERRAIN_STRIDE = 28;
+    public static final int TERRAIN_STRIDE = 28;
 
     // Legacy vertex array state tracking
     private static int posSize = 3, posType = GL11.GL_FLOAT, posStride = 0;
