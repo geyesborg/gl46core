@@ -1,15 +1,12 @@
 package com.github.gl46core.api.compat;
 
-import com.github.gl46core.GL46Core;
 import com.github.gl46core.api.hook.ChunkRenderProvider;
 import com.github.gl46core.api.hook.RenderEventListener;
 import com.github.gl46core.api.hook.RenderRegistry;
 import com.github.gl46core.api.hook.SceneDataProvider;
 import com.github.gl46core.api.render.*;
 import com.github.gl46core.api.render.gpu.MaterialBuffer;
-import com.github.gl46core.api.render.gpu.RenderTarget;
 import com.github.gl46core.api.render.gpu.RenderTargetManager;
-import com.github.gl46core.shaderpack.ShaderpackManager;
 
 import java.util.List;
 import java.util.Map;
