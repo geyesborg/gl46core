@@ -242,6 +242,14 @@ public final class FrameOrchestrator {
             materialBuffer.bind();
             materialBufferDirty = false;
         }
+        // Bind shaderpack program if active
+        com.github.gl46core.shaderpack.ShaderpackManager spm = com.github.gl46core.shaderpack.ShaderpackManager.INSTANCE;
+        if (spm.isActive()) {
+            com.github.gl46core.shaderpack.ShaderpackProgram spProg = spm.getProgramForPass(type);
+            if (spProg != null) {
+                spProg.bind();
+            }
+        }
         passesExecuted++;
     }
 

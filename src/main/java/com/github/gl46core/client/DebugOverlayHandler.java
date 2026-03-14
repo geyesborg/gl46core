@@ -111,6 +111,14 @@ public final class DebugOverlayHandler {
                     rtm.getTargetCount(), vramStr, rtm.getScreenWidth(), rtm.getScreenHeight(), rtm.getShadowResolution()));
         }
 
+        com.github.gl46core.shaderpack.ShaderpackManager spm = com.github.gl46core.shaderpack.ShaderpackManager.INSTANCE;
+        if (spm.isActive()) {
+            event.getRight().add(String.format("Shaderpack: %s | %d programs | %d uniforms",
+                    spm.getPackName(), spm.getProgramCount(), spm.getTotalUniforms()));
+        } else {
+            event.getRight().add("Shaderpack: none");
+        }
+
         com.github.gl46core.api.render.FogState fog = FrameOrchestrator.INSTANCE.getFrameContext().getFog();
         String fogMode = fog.getMode() == 0x2601 ? "LINEAR" : fog.getMode() == 0x0800 ? "EXP" : fog.getMode() == 0x0801 ? "EXP2" : "0x" + Integer.toHexString(fog.getMode());
         event.getRight().add(String.format("Fog: %s start=%.0f end=%.0f d=%.4f col=(%.2f,%.2f,%.2f)",
