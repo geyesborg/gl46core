@@ -74,6 +74,7 @@ public final class CoreStateTracker {
     /** Bump generation counter AFTER a state mutation. */
     private void dirty() {
         generation++;
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordStateGenBump();
     }
 
     // Track which threads have had their default state initialized

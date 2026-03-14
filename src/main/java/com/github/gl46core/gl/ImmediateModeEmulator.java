@@ -196,6 +196,7 @@ public final class ImmediateModeEmulator {
             CoreShaderProgram.INSTANCE.bind(true, true, true, false);
 
             GL11.glDrawArrays(actualMode, 0, actualCount);
+            com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(actualCount);
 
             // Don't unbind shader or VAO/VBO — dirty tracking handles re-use
         } catch (Throwable t) {
