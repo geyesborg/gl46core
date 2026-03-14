@@ -282,11 +282,11 @@ public final class UniformBridge {
                 GL20.glUniformMatrix4fv(e.location, false, matBuf);
                 break;
             case GBUFFER_PREVIOUS_MODEL_VIEW:
-                readMat4(buf, 464); // prevViewMatrix at offset 464
+                readMat4(buf, 432); // prevViewMatrix at offset 432
                 GL20.glUniformMatrix4fv(e.location, false, matBuf);
                 break;
             case GBUFFER_PREVIOUS_PROJECTION:
-                readMat4(buf, 528); // prevProjection at offset 528
+                readMat4(buf, 496); // prevProjection at offset 496
                 GL20.glUniformMatrix4fv(e.location, false, matBuf);
                 break;
             case GBUFFER_MODEL_VIEW_INVERSE:
@@ -345,22 +345,22 @@ public final class UniformBridge {
                 GL20.glUniform1f(e.location, buf.getFloat(220)); // sunDirection.w
                 break;
             case CELESTIAL_ANGLE:
-                GL20.glUniform1f(e.location, buf.getFloat(400)); // celestialAngle offset
+                GL20.glUniform1f(e.location, buf.getFloat(384)); // celestialAngle at offset 384
                 break;
             case RAIN_STRENGTH:
-                GL20.glUniform1f(e.location, buf.getFloat(380)); // rainStrength
+                GL20.glUniform1f(e.location, buf.getFloat(360)); // rainStrength at offset 360
                 break;
             case WETNESS:
-                GL20.glUniform1f(e.location, buf.getFloat(380)); // same as rain for now
+                GL20.glUniform1f(e.location, buf.getFloat(360)); // same as rain for now (offset 360)
                 break;
             case FRAME_TIME_COUNTER:
-                GL20.glUniform1f(e.location, buf.getFloat(368)); // worldTime
+                GL20.glUniform1f(e.location, buf.getFloat(352)); // worldTime at offset 352
                 break;
             case NEAR:
-                GL20.glUniform1f(e.location, buf.getFloat(392)); // nearPlane
+                GL20.glUniform1f(e.location, buf.getFloat(376)); // nearPlane at offset 376
                 break;
             case FAR:
-                GL20.glUniform1f(e.location, buf.getFloat(396)); // farPlane
+                GL20.glUniform1f(e.location, buf.getFloat(380)); // farPlane at offset 380
                 break;
             case FOG_START: {
                 com.github.gl46core.api.render.FogState fog = ctx.getFog();
@@ -380,7 +380,7 @@ public final class UniformBridge {
 
             // ── Int scalars ──
             case WORLD_TIME:
-                GL20.glUniform1i(e.location, (int)(buf.getFloat(368) * 24000) % 24000);
+                GL20.glUniform1i(e.location, (int)(buf.getFloat(352) * 24000) % 24000);
                 break;
             case FOG_MODE: {
                 com.github.gl46core.api.render.FogState fog = ctx.getFog();
@@ -391,7 +391,7 @@ public final class UniformBridge {
                 GL20.glUniform1i(e.location, getEyeInWaterState());
                 break;
             case FRAME_COUNTER:
-                GL20.glUniform1i(e.location, buf.getInt(408)); // frameIndex
+                GL20.glUniform1i(e.location, buf.getInt(392)); // frameIndex at offset 392
                 break;
             case HIDE_GUI:
                 GL20.glUniform1i(e.location, 0);
