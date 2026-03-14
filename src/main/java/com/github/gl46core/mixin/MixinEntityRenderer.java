@@ -117,11 +117,12 @@ public class MixinEntityRenderer {
     }
 
     /**
-     * End world pass timing.
+     * End world pass — transition to UI pass for GUI overlay rendering.
      */
     @Inject(method = "renderWorldPass", at = @At("RETURN"))
     private void gl46core$endWorldPass(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         RenderProfiler.INSTANCE.endPass("world_pass_" + pass);
+        FrameOrchestrator.INSTANCE.setActivePass(PassType.UI);
     }
 
     /**
@@ -130,6 +131,14 @@ public class MixinEntityRenderer {
     @Inject(method = "renderHand", at = @At("HEAD"))
     private void gl46core$onRenderHand(float partialTicks, int pass, CallbackInfo ci) {
         FrameOrchestrator.INSTANCE.setActivePass(PassType.HAND);
+    }
+
+    /**
+     * Track weather rendering pass (rain/snow).
+     */
+    @Inject(method = "renderRainSnow", at = @At("HEAD"))
+    private void gl46core$onRenderWeather(float partialTicks, CallbackInfo ci) {
+        FrameOrchestrator.INSTANCE.setActivePass(PassType.WEATHER);
     }
 
     /**

@@ -469,10 +469,11 @@ void main() {
   #endif
 #endif
 
-    // ── Dynamic light accumulation (eye-space) ──
-    if (gl46_lightCount > 0) {
+    // ── Dynamic light accumulation (eye-space, scaled by pass) ──
+    if (gl46_lightCount > 0 && gl46_dynamicLightScale > 0.0 && gl46_lightingMode != 2) {
+        int maxLights = (gl46_maxDynamicLights > 0) ? min(gl46_lightCount, gl46_maxDynamicLights) : gl46_lightCount;
         vec3 dynLight = vec3(0.0);
-        for (int i = 0; i < gl46_lightCount; i++) {
+        for (int i = 0; i < maxLights; i++) {
             vec3 lPos = gl46_lights[i].positionAndRadius.xyz;
             float lRadius = gl46_lights[i].positionAndRadius.w;
             vec3 lColor = gl46_lights[i].colorAndIntensity.rgb;
@@ -484,7 +485,7 @@ void main() {
                 dynLight += lColor * atten;
             }
         }
-        color.rgb = min(color.rgb * (1.0 + dynLight), vec3(1.0));
+        color.rgb = min(color.rgb * (1.0 + dynLight * gl46_dynamicLightScale), vec3(1.0));
     }
 
 #ifdef ALPHA_TEST_ENABLED
@@ -502,19 +503,23 @@ void main() {
 #endif
 
 #ifdef FOG_ENABLED
-    float fogFactor = 1.0;
-    if (uFogMode == 9729) {
-        // GL_LINEAR
-        fogFactor = clamp((uFogEnd - vFogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
-    } else if (uFogMode == 2048) {
-        // GL_EXP
-        fogFactor = clamp(exp(-uFogDensity * vFogDist), 0.0, 1.0);
-    } else if (uFogMode == 2049) {
-        // GL_EXP2
-        float f = uFogDensity * vFogDist;
-        fogFactor = clamp(exp(-f * f), 0.0, 1.0);
+    // gl46_fogOverrideMode: 0=use scene fog, 1=disabled, 2=custom color
+    if (gl46_fogOverrideMode != 1) {
+        float fogFactor = 1.0;
+        if (uFogMode == 9729) {
+            // GL_LINEAR
+            fogFactor = clamp((uFogEnd - vFogDist) / (uFogEnd - uFogStart), 0.0, 1.0);
+        } else if (uFogMode == 2048) {
+            // GL_EXP
+            fogFactor = clamp(exp(-uFogDensity * vFogDist), 0.0, 1.0);
+        } else if (uFogMode == 2049) {
+            // GL_EXP2
+            float f = uFogDensity * vFogDist;
+            fogFactor = clamp(exp(-f * f), 0.0, 1.0);
+        }
+        vec3 fogCol = (gl46_fogOverrideMode == 2) ? gl46_fogColorOverride.rgb : uFogColor.rgb;
+        color.rgb = mix(fogCol, color.rgb, fogFactor);
     }
-    color.rgb = mix(uFogColor.rgb, color.rgb, fogFactor);
 #endif
 
     fragColor = color;
