@@ -46,4 +46,11 @@ public class MixinRenderGlobal {
                                             float partialTicks, CallbackInfo ci) {
         FrameOrchestrator.INSTANCE.setActivePass(PassType.ENTITY_OPAQUE);
     }
+
+    @Inject(method = "drawSelectionBox", at = @At("HEAD"))
+    private void gl46core$onDrawSelectionBox(net.minecraft.entity.player.EntityPlayer player,
+                                              net.minecraft.util.math.RayTraceResult movingObjectPositionIn,
+                                              int execute, float partialTicks, CallbackInfo ci) {
+        FrameOrchestrator.INSTANCE.setActivePass(PassType.OUTLINE);
+    }
 }

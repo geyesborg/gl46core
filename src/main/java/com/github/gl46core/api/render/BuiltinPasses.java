@@ -32,8 +32,12 @@ public final class BuiltinPasses {
     private static final TranslationPass PARTICLES        = new TranslationPass("particles", PassType.PARTICLES);
     private static final TranslationPass WEATHER          = new TranslationPass("weather", PassType.WEATHER);
     private static final TranslationPass HAND             = new TranslationPass("hand", PassType.HAND);
+    private static final TranslationPass OUTLINE          = new TranslationPass("outline", PassType.OUTLINE);
+    private static final TranslationPass POST_CHAIN       = new TranslationPass("post_chain", PassType.POST_CHAIN);
     private static final TranslationPass UI               = new TranslationPass("ui", PassType.UI);
     private static final TranslationPass DEBUG_OVERLAY    = new TranslationPass("debug_overlay", PassType.DEBUG_OVERLAY);
+    private static final TranslationPass SHADOW_OPAQUE    = new TranslationPass("shadow_opaque", PassType.SHADOW_OPAQUE);
+    private static final TranslationPass SHADOW_CUTOUT    = new TranslationPass("shadow_cutout", PassType.SHADOW_CUTOUT);
 
     // Currently active pass — set by mixin hooks as MC renders each stage
     private static volatile PassType activePassType = PassType.TERRAIN_OPAQUE;
@@ -46,6 +50,11 @@ public final class BuiltinPasses {
      * Called during FrameOrchestrator.buildPassGraph().
      */
     public static void register(PassGraph graph) {
+        // Shadow passes (execute first when shaderpacks are active)
+        graph.addPass(SHADOW_OPAQUE);
+        graph.addPass(SHADOW_CUTOUT);
+
+        // Geometry passes
         graph.addPass(SKY);
         graph.addPass(TERRAIN_OPAQUE);
         graph.addPass(TERRAIN_CUTOUT);
@@ -56,7 +65,15 @@ public final class BuiltinPasses {
         graph.addPass(WATER);
         graph.addPass(PARTICLES);
         graph.addPass(WEATHER);
+
+        // Overlay passes
         graph.addPass(HAND);
+        graph.addPass(OUTLINE);
+
+        // Post-processing
+        graph.addPass(POST_CHAIN);
+
+        // UI / debug
         graph.addPass(UI);
         graph.addPass(DEBUG_OVERLAY);
     }
@@ -103,9 +120,12 @@ public final class BuiltinPasses {
             case PARTICLES           -> PARTICLES;
             case WEATHER             -> WEATHER;
             case HAND                -> HAND;
+            case OUTLINE             -> OUTLINE;
+            case POST_CHAIN          -> POST_CHAIN;
             case UI                  -> UI;
             case DEBUG_OVERLAY       -> DEBUG_OVERLAY;
-            default                  -> TERRAIN_OPAQUE;
+            case SHADOW_OPAQUE       -> SHADOW_OPAQUE;
+            case SHADOW_CUTOUT       -> SHADOW_CUTOUT;
         };
     }
 
@@ -177,6 +197,15 @@ public final class BuiltinPasses {
                     decl.writesColor();
                     decl.writesDepth();
                     break;
+                case OUTLINE:
+                    decl.writesColor();
+                    decl.readsDepth();
+                    break;
+                case POST_CHAIN:
+                    decl.writesColor();
+                    decl.readsColor();
+                    decl.readsDepth();
+                    break;
                 case UI:
                 case DEBUG_OVERLAY:
                     decl.writesColor();
@@ -223,6 +252,16 @@ public final class BuiltinPasses {
                     flags |= PassData.FLAG_BACKFACE_CULL;
                     passData.setLightingMode(PassData.LIGHTING_FULL);
                     passData.setFogOverride(1, 0, 0, 0, 0); // no fog on hand
+                    break;
+                case OUTLINE:
+                    // Selection box: line rendering, depth test, no depth write, blending
+                    flags = PassData.FLAG_DEPTH_TEST | PassData.FLAG_BLENDING;
+                    passData.setLightingMode(PassData.LIGHTING_UNLIT);
+                    break;
+                case POST_CHAIN:
+                    // Full-screen post-processing: no depth, no cull
+                    flags = 0;
+                    passData.setLightingMode(PassData.LIGHTING_UNLIT);
                     break;
                 case UI:
                 case DEBUG_OVERLAY:
