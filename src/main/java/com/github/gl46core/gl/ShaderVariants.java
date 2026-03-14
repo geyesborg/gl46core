@@ -443,6 +443,41 @@ layout(std140, binding = 3) uniform PerPass {
     vec4 gl46_ambientOverride;    // w=0 means use scene ambient
 };
 
+// ── SceneData UBO (binding 5) — extended scene context ──
+layout(std140, binding = 5) uniform SceneData {
+    mat4 gl46_viewMatrix;           // offset 0
+    mat4 gl46_projectionMatrix;     // offset 64
+    mat4 gl46_viewProjection;       // offset 128
+    vec4 gl46_cameraPosition;       // xyz=pos, w=0
+    vec4 gl46_sunDirection;         // xyz=dir, w=sunAngle
+    vec4 gl46_moonDirection;        // xyz=dir, w=skylightStrength
+    vec4 gl46_sceneFogColor;        // scene-level fog color
+    vec4 gl46_ambientLight;         // rgb=ambient, a=0
+    vec4 gl46_light0Pos;            // directional light 0
+    vec4 gl46_light0Color;
+    vec4 gl46_light1Pos;            // directional light 1
+    vec4 gl46_light1Color;
+    float gl46_sceneFogDensity;
+    float gl46_sceneFogStart;
+    float gl46_sceneFogEnd;
+    int   gl46_sceneFogMode;
+    float gl46_worldTime;
+    float gl46_partialTicks;
+    float gl46_rainStrength;
+    float gl46_thunderStrength;
+    ivec2 gl46_viewportSize;
+    float gl46_nearPlane;
+    float gl46_farPlane;
+    float gl46_celestialAngle;
+    float gl46_sunBrightness;
+    int   gl46_frameIndex;
+    int   gl46_lightingFlags;
+    vec4  gl46_sunColor;            // rgb=sun, a=blockLightScale
+    vec4  gl46_moonColor;           // rgb=moon, a=weatherDarken
+    mat4  gl46_prevViewMatrix;
+    mat4  gl46_prevProjection;
+};
+
 // ── Dynamic Light SSBO (binding 2, separate from UBO binding 2) ──
 struct DynLight {
     vec4 positionAndRadius;   // xyz=eyeSpace, w=radius

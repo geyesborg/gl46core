@@ -204,6 +204,10 @@ public final class FrameOrchestrator {
             passUbo.upload(pass.getPassData().pack(), 0, PassData.GPU_SIZE);
             passUbo.bindBase(GL31.GL_UNIFORM_BUFFER, PASS_UBO_BINDING);
         }
+        // Ensure SceneData UBO is bound for extended scene access
+        if (sceneUbo != null) {
+            sceneUbo.bindBase(GL31.GL_UNIFORM_BUFFER, SCENE_UBO_BINDING);
+        }
         passesExecuted++;
     }
 
