@@ -103,6 +103,14 @@ public final class DebugOverlayHandler {
         event.getRight().add(String.format("Materials: %d unique | %d capacity",
                 ldt.getUniqueMaterialCount(), matCapacity));
 
+        com.github.gl46core.api.render.gpu.RenderTargetManager rtm = com.github.gl46core.api.render.gpu.RenderTargetManager.INSTANCE;
+        if (rtm.isInitialized()) {
+            long vram = rtm.estimateTotalVram();
+            String vramStr = vram < 1024*1024 ? String.format("%.0fKB", vram/1024.0) : String.format("%.1fMB", vram/(1024.0*1024.0));
+            event.getRight().add(String.format("RT: %d targets | %s VRAM | %dx%d | shadow=%d",
+                    rtm.getTargetCount(), vramStr, rtm.getScreenWidth(), rtm.getScreenHeight(), rtm.getShadowResolution()));
+        }
+
         com.github.gl46core.api.render.FogState fog = FrameOrchestrator.INSTANCE.getFrameContext().getFog();
         String fogMode = fog.getMode() == 0x2601 ? "LINEAR" : fog.getMode() == 0x0800 ? "EXP" : fog.getMode() == 0x0801 ? "EXP2" : "0x" + Integer.toHexString(fog.getMode());
         event.getRight().add(String.format("Fog: %s start=%.0f end=%.0f d=%.4f col=(%.2f,%.2f,%.2f)",

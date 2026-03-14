@@ -5,6 +5,7 @@ import com.github.gl46core.api.hook.RenderRegistry;
 import com.github.gl46core.api.render.gpu.GpuBuffer;
 import com.github.gl46core.api.render.gpu.GpuBufferPool;
 import com.github.gl46core.api.render.gpu.MaterialBuffer;
+import com.github.gl46core.api.render.gpu.RenderTargetManager;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
 import org.lwjgl.opengl.GL31;
 
@@ -119,6 +120,17 @@ public final class FrameOrchestrator {
         materialBufferDirty = true;
         BuiltinPasses.setActive(PassType.TERRAIN_OPAQUE);
         LegacyDrawTranslator.INSTANCE.beginFrame();
+
+        // Initialize or resize render targets based on current viewport
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getMinecraft();
+        int fbW = mc.displayWidth;
+        int fbH = mc.displayHeight;
+        RenderTargetManager rtm = RenderTargetManager.INSTANCE;
+        if (!rtm.isInitialized()) {
+            rtm.initialize(fbW, fbH);
+        } else {
+            rtm.resize(fbW, fbH);
+        }
 
         // Fire onFrameBegin for all registered event listeners
         fireFrameBegin();
