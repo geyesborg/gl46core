@@ -4,6 +4,7 @@ import com.github.gl46core.api.hook.RenderEventListener;
 import com.github.gl46core.api.hook.RenderRegistry;
 import com.github.gl46core.api.render.gpu.GpuBuffer;
 import com.github.gl46core.api.render.gpu.GpuBufferPool;
+import com.github.gl46core.api.render.gpu.MaterialBuffer;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
 import org.lwjgl.opengl.GL31;
 
@@ -45,6 +46,11 @@ public final class FrameOrchestrator {
     public static final int PASS_UBO_BINDING = 3;
     private GpuBuffer passUbo;
     private PassType lastUploadedPassType;
+
+    // Material SSBO — binding 0, 64 bytes per entry.
+    // Populated per-frame by LegacyDrawTranslator, flushed before first pass draw.
+    private MaterialBuffer materialBuffer;
+    private boolean materialBufferDirty;
 
     // Per-pass-type queues — one queue per PassType
     private final EnumMap<PassType, RenderQueue> queues = new EnumMap<>(PassType.class);
@@ -110,6 +116,7 @@ public final class FrameOrchestrator {
         totalDrawCalls = 0;
         passesExecuted = 0;
         lastUploadedPassType = null;
+        materialBufferDirty = true;
         BuiltinPasses.setActive(PassType.TERRAIN_OPAQUE);
         LegacyDrawTranslator.INSTANCE.beginFrame();
 
@@ -145,6 +152,12 @@ public final class FrameOrchestrator {
         // Lazily create the PerPass UBO
         if (passUbo == null) {
             passUbo = GpuBufferPool.INSTANCE.createDynamicUBO(PassData.GPU_SIZE);
+        }
+
+        // Lazily create the MaterialBuffer SSBO
+        if (materialBuffer == null) {
+            materialBuffer = new MaterialBuffer();
+            materialBuffer.init(256);
         }
 
         // Upload packed scene data to GPU
@@ -210,6 +223,12 @@ public final class FrameOrchestrator {
         // Ensure SceneData UBO is bound for extended scene access
         if (sceneUbo != null) {
             sceneUbo.bindBase(GL31.GL_UNIFORM_BUFFER, SCENE_UBO_BINDING);
+        }
+        // Flush and bind Material SSBO (once per frame on first pass transition)
+        if (materialBufferDirty && materialBuffer != null) {
+            materialBuffer.flush();
+            materialBuffer.bind();
+            materialBufferDirty = false;
         }
         passesExecuted++;
     }
@@ -332,10 +351,11 @@ public final class FrameOrchestrator {
     // Accessors
     // ═══════════════════════════════════════════════════════════════════
 
-    public FrameContext getFrameContext() { return frameContext; }
-    public PassGraph    getPassGraph()    { return passGraph; }
-    public SceneData    getSceneData()    { return sceneData; }
-    public FrameStage   getCurrentStage() { return currentStage; }
+    public FrameContext    getFrameContext()    { return frameContext; }
+    public PassGraph       getPassGraph()      { return passGraph; }
+    public SceneData       getSceneData()      { return sceneData; }
+    public FrameStage      getCurrentStage()   { return currentStage; }
+    public MaterialBuffer  getMaterialBuffer()  { return materialBuffer; }
 
     // ── Stats ──
 

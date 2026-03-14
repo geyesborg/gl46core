@@ -301,6 +301,26 @@ layout(std430, binding = 3) readonly buffer ObjectSSBO {
 };
 #endif
 
+// ── Material SSBO (binding 0) — per-material properties ──
+struct MaterialEntry {
+    int   materialId;
+    int   textureIndex;
+    int   lightmapIndex;
+    int   shaderFeatureFlags;
+    vec4  colorMultiplier;      // RGBA tint
+    float emissiveStrength;
+    float roughness;
+    float metallic;
+    float alphaCutoff;
+    int   alphaMode;            // 0=opaque, 1=cutout, 2=blend
+    int   texEnvMode;
+    int   lightResponseFlags;
+    int   _pad0;
+};
+layout(std430, binding = 0) readonly buffer MaterialSSBO {
+    MaterialEntry gl46_materials[];
+};
+
 // ── Varyings ──
 out vec4 vColor;
 out vec2 vTexCoord;
@@ -528,6 +548,26 @@ layout(std430, binding = 2) readonly buffer LightSSBO {
     int gl46_lightPad0;
     int gl46_lightPad1;
     DynLight gl46_lights[];
+};
+
+// ── Material SSBO (binding 0) — per-material properties ──
+struct MaterialEntry {
+    int   materialId;
+    int   textureIndex;
+    int   lightmapIndex;
+    int   shaderFeatureFlags;
+    vec4  colorMultiplier;      // RGBA tint
+    float emissiveStrength;
+    float roughness;
+    float metallic;
+    float alphaCutoff;
+    int   alphaMode;            // 0=opaque, 1=cutout, 2=blend
+    int   texEnvMode;
+    int   lightResponseFlags;
+    int   _pad0;
+};
+layout(std430, binding = 0) readonly buffer MaterialSSBO {
+    MaterialEntry gl46_materials[];
 };
 
 layout(location = 0) out vec4 fragColor;

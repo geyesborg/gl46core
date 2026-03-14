@@ -79,6 +79,7 @@ public final class MaterialBuffer {
         long size = (long) count * ENTRY_SIZE;
         stagingBuffer.position(0).limit((int) size);
         gpuBuffer.upload(stagingBuffer, 0, size);
+        stagingBuffer.clear(); // Reset limit to capacity for next frame's absolute puts
         dirty = false;
     }
 

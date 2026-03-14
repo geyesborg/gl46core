@@ -4,6 +4,9 @@ import com.github.gl46core.api.render.*;
 import com.github.gl46core.api.hook.LegacyTranslationHandler;
 import com.github.gl46core.api.hook.RenderRegistry;
 
+import com.github.gl46core.api.render.gpu.MaterialBuffer;
+
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -34,6 +37,10 @@ public final class LegacyDrawTranslator {
     // Submission counter per frame (used as sort key tiebreaker)
     private int submissionIndex;
 
+    // Per-frame material deduplication: materialId hash → SSBO index
+    private final HashMap<Integer, Integer> materialIndexMap = new HashMap<>();
+    private int nextMaterialIndex;
+
     private LegacyDrawTranslator() {}
 
     /**
@@ -41,6 +48,8 @@ public final class LegacyDrawTranslator {
      */
     public void beginFrame() {
         submissionIndex = 0;
+        materialIndexMap.clear();
+        nextMaterialIndex = 0;
     }
 
     /**
@@ -77,12 +86,16 @@ public final class LegacyDrawTranslator {
         MaterialData material = interpreter.inferMaterial(hasColor, hasTexCoord,
                                                           hasNormal, hasLightMap);
 
-        // 3. Acquire submission slot
+        // 3. Register material in SSBO (deduplicate by hash)
+        int matHash = material.getMaterialId();
+        int ssboIndex = registerMaterial(matHash, material);
+
+        // 4. Acquire submission slot
         FrameOrchestrator orchestrator = FrameOrchestrator.INSTANCE;
         RenderSubmission sub = orchestrator.submit(passType);
 
-        // 4. Configure submission
-        sub.setMaterialIndex(material.getMaterialId());
+        // 5. Configure submission with SSBO index
+        sub.setMaterialIndex(ssboIndex);
         sub.setMesh(vboOffset, vertexCount, -1, drawMode);
 
         // 5. Record per-pass draw count for profiler
@@ -112,5 +125,25 @@ public final class LegacyDrawTranslator {
                       hasColor, hasTexCoord, hasNormal, hasLightMap, 0.0f);
     }
 
-    public int getSubmissionCount() { return submissionIndex; }
+    /**
+     * Register a material in the MaterialBuffer SSBO.
+     * Deduplicates by material hash — returns existing SSBO index if already registered.
+     */
+    private int registerMaterial(int matHash, MaterialData material) {
+        Integer existing = materialIndexMap.get(matHash);
+        if (existing != null) return existing;
+
+        int idx = nextMaterialIndex++;
+        materialIndexMap.put(matHash, idx);
+
+        // Write to MaterialBuffer if available
+        MaterialBuffer matBuf = FrameOrchestrator.INSTANCE.getMaterialBuffer();
+        if (matBuf != null) {
+            matBuf.setMaterial(idx, material);
+        }
+        return idx;
+    }
+
+    public int getSubmissionCount()    { return submissionIndex; }
+    public int getUniqueMaterialCount() { return nextMaterialIndex; }
 }
