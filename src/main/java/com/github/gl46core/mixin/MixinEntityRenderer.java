@@ -1,6 +1,5 @@
 package com.github.gl46core.mixin;
 
-import com.github.gl46core.api.debug.RenderDebugOverlay;
 import com.github.gl46core.api.debug.RenderProfiler;
 import com.github.gl46core.api.render.FrameOrchestrator;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
@@ -113,8 +112,7 @@ public class MixinEntityRenderer {
         // Finalize orchestrator
         FrameOrchestrator.INSTANCE.endFrame();
 
-        // Finalize profiler and update overlay
+        // Finalize profiler (F3 debug screen reads stats directly)
         RenderProfiler.INSTANCE.endFrame();
-        RenderDebugOverlay.INSTANCE.update();
     }
 }

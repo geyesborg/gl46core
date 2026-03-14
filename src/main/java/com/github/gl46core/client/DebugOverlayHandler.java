@@ -1,51 +1,44 @@
 package com.github.gl46core.client;
 
-import com.github.gl46core.api.debug.RenderDebugOverlay;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.settings.KeyBinding;
+import com.github.gl46core.api.debug.RenderProfiler;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
-import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.InputEvent;
-import org.lwjgl.glfw.GLFW;
 
 /**
- * Handles the debug overlay keybind and HUD rendering.
+ * Appends gl46core render stats to the F3 debug screen (right side).
  *
- * Press F4 to toggle the gl46core debug overlay showing FPS,
- * draw calls, shader switches, buffer uploads, and compat stats.
+ * Shows draw calls, shader switches, variant compilations, buffer uploads,
+ * and compat layer stats when F3 is open — no extra keybind needed.
  */
 public final class DebugOverlayHandler {
-
-    private static final KeyBinding KEY_TOGGLE_OVERLAY = new KeyBinding(
-            "key.gl46core.debugOverlay", GLFW.GLFW_KEY_F4, "key.categories.gl46core"
-    );
 
     private DebugOverlayHandler() {}
 
     public static void register() {
-        ClientRegistry.registerKeyBinding(KEY_TOGGLE_OVERLAY);
         net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new DebugOverlayHandler());
     }
 
     @SubscribeEvent
-    public void onKeyInput(InputEvent.KeyInputEvent event) {
-        if (KEY_TOGGLE_OVERLAY.isPressed()) {
-            RenderDebugOverlay.INSTANCE.toggle();
-        }
-    }
+    public void onDebugText(RenderGameOverlayEvent.Text event) {
+        if (!net.minecraft.client.Minecraft.getMinecraft().gameSettings.showDebugInfo) return;
 
-    @SubscribeEvent
-    public void onRenderOverlay(RenderGameOverlayEvent.Text event) {
-        RenderDebugOverlay overlay = RenderDebugOverlay.INSTANCE;
-        if (!overlay.isEnabled()) return;
+        RenderProfiler p = RenderProfiler.INSTANCE;
 
-        Minecraft mc = Minecraft.getMinecraft();
-        int y = 2;
-        for (String line : overlay.getLines()) {
-            mc.fontRenderer.drawStringWithShadow(line, 2, y, 0xFFFFFF);
-            y += 10;
-        }
+        event.getRight().add("");
+        event.getRight().add("[gl46core]");
+        event.getRight().add(String.format("Draws: %d | Verts: %d | Switches: %d",
+                p.getTotalDrawCalls(), p.getTotalVertices(), p.getShaderSwitches()));
+        event.getRight().add(String.format("Frame: %.2f ms | Avg: %.1f fps",
+                p.getFrameTimeMs(), p.getAverageFps()));
+        event.getRight().add(String.format("State bumps: %d | Variants compiled: %d",
+                p.getStateGenerationBumps(), p.getVariantsCompiled()));
+
+        long uploaded = p.getBytesUploaded();
+        String uploadStr = uploaded < 1024 ? uploaded + "B"
+                : uploaded < 1024 * 1024 ? String.format("%.1fKB", uploaded / 1024.0)
+                : String.format("%.1fMB", uploaded / (1024.0 * 1024.0));
+        event.getRight().add(String.format("GPU upload: %s | Buffers: %d",
+                uploadStr,
+                com.github.gl46core.api.render.gpu.GpuBufferPool.INSTANCE.getBufferCount()));
     }
 }
