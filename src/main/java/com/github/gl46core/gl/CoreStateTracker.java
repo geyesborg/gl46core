@@ -61,6 +61,21 @@ public final class CoreStateTracker {
 
     public int getGeneration() { return generation; }
 
+    /**
+     * Flush any pending immediate-mode vertices BEFORE a state mutation.
+     * Deferred batching accumulates vertices that were drawn with the current
+     * UBO state — the flush must happen before fields change so the shader
+     * reads the old values.
+     */
+    private void flushPending() {
+        ImmediateModeEmulator.INSTANCE.flush();
+    }
+
+    /** Bump generation counter AFTER a state mutation. */
+    private void dirty() {
+        generation++;
+    }
+
     // Track which threads have had their default state initialized
     private final java.util.concurrent.ConcurrentHashMap<Long, Boolean> initializedThreads = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -113,7 +128,7 @@ public final class CoreStateTracker {
             // Color mask
             GL11.glColorMask(cs.colorMaskR, cs.colorMaskG, cs.colorMaskB, cs.colorMaskA);
 
-            generation++;
+            dirty();
         }
     }
 
@@ -163,6 +178,7 @@ public final class CoreStateTracker {
 
     public void popAttrib() {
         if (attribStackPointer <= 0) return;
+        flushPending();
         AttribSnapshot s = attribStack[--attribStackPointer];
         // Removed state
         alphaTestEnabled = s.alphaTestEnabled;
@@ -211,7 +227,7 @@ public final class CoreStateTracker {
         polygonOffset(s.polygonOffsetFactor, s.polygonOffsetUnits);
         cs.colorMaskR = !s.colorMaskR;
         colorMask(s.colorMaskR, s.colorMaskG, s.colorMaskB, s.colorMaskA);
-        generation++;
+        dirty();
     }
 
     // ── Alpha test ──────────────────────────────────────────────────────
@@ -255,48 +271,51 @@ public final class CoreStateTracker {
     // ── Shade model ─────────────────────────────────────────────────────
     private int shadeModel = 0x1D01; // GL_SMOOTH
 
-    public void enableAlphaTest() { alphaTestEnabled = true; generation++; }
-    public void disableAlphaTest() { alphaTestEnabled = false; generation++; }
-    public void alphaFunc(int func, float ref) { alphaFunc = func; alphaRef = ref; generation++; }
+    public void enableAlphaTest() { flushPending(); alphaTestEnabled = true; dirty(); }
+    public void disableAlphaTest() { flushPending(); alphaTestEnabled = false; dirty(); }
+    public void alphaFunc(int func, float ref) { flushPending(); alphaFunc = func; alphaRef = ref; dirty(); }
     public boolean isAlphaTestEnabled() { return alphaTestEnabled; }
     public int getAlphaFunc() { return alphaFunc; }
     public float getAlphaRef() { return alphaRef; }
 
     // ── Lighting ────────────────────────────────────────────────────────
 
-    public void enableLighting() { lightingEnabled = true; generation++; }
-    public void disableLighting() { lightingEnabled = false; generation++; }
-    public void enableLight(int light) { if (light >= 0 && light < 8) { lightEnabled[light] = true; generation++; } }
-    public void disableLight(int light) { if (light >= 0 && light < 8) { lightEnabled[light] = false; generation++; } }
+    public void enableLighting() { flushPending(); lightingEnabled = true; dirty(); }
+    public void disableLighting() { flushPending(); lightingEnabled = false; dirty(); }
+    public void enableLight(int light) { if (light >= 0 && light < 8) { flushPending(); lightEnabled[light] = true; dirty(); } }
+    public void disableLight(int light) { if (light >= 0 && light < 8) { flushPending(); lightEnabled[light] = false; dirty(); } }
     public boolean isLightingEnabled() { return lightingEnabled; }
     public boolean isLightEnabled(int light) { return light >= 0 && light < 8 && lightEnabled[light]; }
 
     public void setLightPosition(int light, float x, float y, float z, float w) {
         if (light >= 0 && light < 2) {
+            flushPending();
             lightPosition[light][0] = x; lightPosition[light][1] = y;
             lightPosition[light][2] = z; lightPosition[light][3] = w;
-            generation++;
+            dirty();
         }
     }
     public void setLightDiffuse(int light, float r, float g, float b, float a) {
         if (light >= 0 && light < 2) {
+            flushPending();
             lightDiffuse[light][0] = r; lightDiffuse[light][1] = g;
             lightDiffuse[light][2] = b; lightDiffuse[light][3] = a;
-            generation++;
+            dirty();
         }
     }
     public void setLightAmbient(int light, float r, float g, float b, float a) {
         if (light >= 0 && light < 2) {
+            flushPending();
             lightAmbient[light][0] = r; lightAmbient[light][1] = g;
             lightAmbient[light][2] = b; lightAmbient[light][3] = a;
-            generation++;
+            dirty();
         }
     }
     public float[] getLightPosition(int light) { return light >= 0 && light < 2 ? lightPosition[light] : new float[4]; }
     public float[] getLightDiffuse(int light) { return light >= 0 && light < 2 ? lightDiffuse[light] : new float[4]; }
 
     public void setLightModelAmbient(float r, float g, float b, float a) {
-        ambientR = r; ambientG = g; ambientB = b; ambientA = a; generation++;
+        flushPending(); ambientR = r; ambientG = g; ambientB = b; ambientA = a; dirty();
     }
     public float getLightModelAmbientR() { return ambientR; }
     public float getLightModelAmbientG() { return ambientG; }
@@ -304,13 +323,13 @@ public final class CoreStateTracker {
 
     // ── Fog ─────────────────────────────────────────────────────────────
 
-    public void enableFog() { fogEnabled = true; generation++; }
-    public void disableFog() { fogEnabled = false; generation++; }
-    public void setFogMode(int mode) { fogMode = mode; generation++; }
-    public void setFogDensity(float density) { fogDensity = density; generation++; }
-    public void setFogStart(float start) { fogStart = start; generation++; }
-    public void setFogEnd(float end) { fogEnd = end; generation++; }
-    public void setFogColor(float r, float g, float b, float a) { fogR = r; fogG = g; fogB = b; fogA = a; generation++; }
+    public void enableFog() { flushPending(); fogEnabled = true; dirty(); }
+    public void disableFog() { flushPending(); fogEnabled = false; dirty(); }
+    public void setFogMode(int mode) { flushPending(); fogMode = mode; dirty(); }
+    public void setFogDensity(float density) { flushPending(); fogDensity = density; dirty(); }
+    public void setFogStart(float start) { flushPending(); fogStart = start; dirty(); }
+    public void setFogEnd(float end) { flushPending(); fogEnd = end; dirty(); }
+    public void setFogColor(float r, float g, float b, float a) { flushPending(); fogR = r; fogG = g; fogB = b; fogA = a; dirty(); }
     public boolean isFogEnabled() { return fogEnabled; }
     public int getFogMode() { return fogMode; }
     public float getFogDensity() { return fogDensity; }
@@ -320,12 +339,12 @@ public final class CoreStateTracker {
     // ── Color ───────────────────────────────────────────────────────────
 
     public void color(float r, float g, float b, float a) {
-        ThreadCoreState cs = coreState();
-        cs.colorR = r; cs.colorG = g; cs.colorB = b; cs.colorA = a; generation++;
+        flushPending(); ThreadCoreState cs = coreState();
+        cs.colorR = r; cs.colorG = g; cs.colorB = b; cs.colorA = a; dirty();
     }
     public void resetColor() {
-        ThreadCoreState cs = coreState();
-        cs.colorR = 1.0f; cs.colorG = 1.0f; cs.colorB = 1.0f; cs.colorA = 1.0f; generation++;
+        flushPending(); ThreadCoreState cs = coreState();
+        cs.colorR = 1.0f; cs.colorG = 1.0f; cs.colorB = 1.0f; cs.colorA = 1.0f; dirty();
     }
     public float getColorR() { return coreState().colorR; }
     public float getColorG() { return coreState().colorG; }
@@ -334,35 +353,35 @@ public final class CoreStateTracker {
 
     // ── Texture 2D ──────────────────────────────────────────────────────
 
-    public void enableTexture2D(int unit) { if (unit >= 0 && unit < 8) { coreState().texture2DEnabled[unit] = true; generation++; } }
-    public void disableTexture2D(int unit) { if (unit >= 0 && unit < 8) { coreState().texture2DEnabled[unit] = false; generation++; } }
+    public void enableTexture2D(int unit) { if (unit >= 0 && unit < 8) { flushPending(); coreState().texture2DEnabled[unit] = true; dirty(); } }
+    public void disableTexture2D(int unit) { if (unit >= 0 && unit < 8) { flushPending(); coreState().texture2DEnabled[unit] = false; dirty(); } }
     public boolean isTexture2DEnabled(int unit) { return unit >= 0 && unit < 8 && coreState().texture2DEnabled[unit]; }
 
     // ── Normalize ───────────────────────────────────────────────────────
 
-    public void enableNormalize() { normalizeEnabled = true; generation++; }
-    public void disableNormalize() { normalizeEnabled = false; generation++; }
+    public void enableNormalize() { flushPending(); normalizeEnabled = true; dirty(); }
+    public void disableNormalize() { flushPending(); normalizeEnabled = false; dirty(); }
     public boolean isNormalizeEnabled() { return normalizeEnabled; }
-    public void enableRescaleNormal() { rescaleNormalEnabled = true; generation++; }
-    public void disableRescaleNormal() { rescaleNormalEnabled = false; generation++; }
+    public void enableRescaleNormal() { flushPending(); rescaleNormalEnabled = true; dirty(); }
+    public void disableRescaleNormal() { flushPending(); rescaleNormalEnabled = false; dirty(); }
     public boolean isRescaleNormalEnabled() { return rescaleNormalEnabled; }
 
     // ── Color material ──────────────────────────────────────────────────
 
-    public void enableColorMaterial() { colorMaterialEnabled = true; generation++; }
-    public void disableColorMaterial() { colorMaterialEnabled = false; generation++; }
+    public void enableColorMaterial() { flushPending(); colorMaterialEnabled = true; dirty(); }
+    public void disableColorMaterial() { flushPending(); colorMaterialEnabled = false; dirty(); }
     public boolean isColorMaterialEnabled() { return colorMaterialEnabled; }
 
     // ── Shade model ─────────────────────────────────────────────────────
 
-    public void shadeModel(int model) { shadeModel = model; generation++; }
+    public void shadeModel(int model) { flushPending(); shadeModel = model; dirty(); }
     public int getShadeModel() { return shadeModel; }
 
     // ── Lightmap coordinates (replaces glMultiTexCoord2f) ─────────────
     private float lightmapX = 240.0f;
     private float lightmapY = 240.0f;
 
-    public void setLightmapCoords(float x, float y) { lightmapX = x; lightmapY = y; generation++; }
+    public void setLightmapCoords(float x, float y) { flushPending(); lightmapX = x; lightmapY = y; dirty(); }
     public float getLightmapX() { return lightmapX; }
     public float getLightmapY() { return lightmapY; }
 
@@ -384,10 +403,10 @@ public final class CoreStateTracker {
     private int texEnvMode = 0x2100; // GL_MODULATE (default)
     private float texEnvColorR = 0, texEnvColorG = 0, texEnvColorB = 0, texEnvColorA = 0;
 
-    public void setTexEnvMode(int mode) { texEnvMode = mode; generation++; }
+    public void setTexEnvMode(int mode) { flushPending(); texEnvMode = mode; dirty(); }
     public int getTexEnvMode() { return texEnvMode; }
     public void setTexEnvColor(float r, float g, float b, float a) {
-        texEnvColorR = r; texEnvColorG = g; texEnvColorB = b; texEnvColorA = a; generation++;
+        flushPending(); texEnvColorR = r; texEnvColorG = g; texEnvColorB = b; texEnvColorA = a; dirty();
     }
     public float getTexEnvColorR() { return texEnvColorR; }
     public float getTexEnvColorG() { return texEnvColorG; }
@@ -402,17 +421,17 @@ public final class CoreStateTracker {
     private final float[][] texGenObjectPlane = {{1,0,0,0},{0,1,0,0},{0,0,0,0},{0,0,0,0}};
     private final float[][] texGenEyePlane = {{1,0,0,0},{0,1,0,0},{0,0,0,0},{0,0,0,0}};
 
-    public void enableTexGen(int coord) { if (coord >= 0 && coord < 4) { texGenEnabled[coord] = true; generation++; } }
-    public void disableTexGen(int coord) { if (coord >= 0 && coord < 4) { texGenEnabled[coord] = false; generation++; } }
+    public void enableTexGen(int coord) { if (coord >= 0 && coord < 4) { flushPending(); texGenEnabled[coord] = true; dirty(); } }
+    public void disableTexGen(int coord) { if (coord >= 0 && coord < 4) { flushPending(); texGenEnabled[coord] = false; dirty(); } }
     public boolean isTexGenEnabled(int coord) { return coord >= 0 && coord < 4 && texGenEnabled[coord]; }
-    public void setTexGenMode(int coord, int mode) { if (coord >= 0 && coord < 4) { texGenMode[coord] = mode; generation++; } }
+    public void setTexGenMode(int coord, int mode) { if (coord >= 0 && coord < 4) { flushPending(); texGenMode[coord] = mode; dirty(); } }
     public int getTexGenMode(int coord) { return coord >= 0 && coord < 4 ? texGenMode[coord] : 0x2400; }
     public void setTexGenObjectPlane(int coord, float a, float b, float c, float d) {
-        if (coord >= 0 && coord < 4) { texGenObjectPlane[coord][0] = a; texGenObjectPlane[coord][1] = b; texGenObjectPlane[coord][2] = c; texGenObjectPlane[coord][3] = d; generation++; }
+        if (coord >= 0 && coord < 4) { flushPending(); texGenObjectPlane[coord][0] = a; texGenObjectPlane[coord][1] = b; texGenObjectPlane[coord][2] = c; texGenObjectPlane[coord][3] = d; dirty(); }
     }
     public float[] getTexGenObjectPlane(int coord) { return coord >= 0 && coord < 4 ? texGenObjectPlane[coord] : new float[4]; }
     public void setTexGenEyePlane(int coord, float a, float b, float c, float d) {
-        if (coord >= 0 && coord < 4) { texGenEyePlane[coord][0] = a; texGenEyePlane[coord][1] = b; texGenEyePlane[coord][2] = c; texGenEyePlane[coord][3] = d; generation++; }
+        if (coord >= 0 && coord < 4) { flushPending(); texGenEyePlane[coord][0] = a; texGenEyePlane[coord][1] = b; texGenEyePlane[coord][2] = c; texGenEyePlane[coord][3] = d; dirty(); }
     }
     public float[] getTexGenEyePlane(int coord) { return coord >= 0 && coord < 4 ? texGenEyePlane[coord] : new float[4]; }
 
@@ -422,14 +441,15 @@ public final class CoreStateTracker {
     private final boolean[] clipPlaneEnabled = new boolean[6];
     private final float[][] clipPlaneEquation = new float[6][4];
 
-    public void enableClipPlane(int plane) { if (plane >= 0 && plane < 6) { clipPlaneEnabled[plane] = true; generation++; } }
-    public void disableClipPlane(int plane) { if (plane >= 0 && plane < 6) { clipPlaneEnabled[plane] = false; generation++; } }
+    public void enableClipPlane(int plane) { if (plane >= 0 && plane < 6) { flushPending(); clipPlaneEnabled[plane] = true; dirty(); } }
+    public void disableClipPlane(int plane) { if (plane >= 0 && plane < 6) { flushPending(); clipPlaneEnabled[plane] = false; dirty(); } }
     public boolean isClipPlaneEnabled(int plane) { return plane >= 0 && plane < 6 && clipPlaneEnabled[plane]; }
     public void setClipPlaneEquation(int plane, float a, float b, float c, float d) {
         if (plane >= 0 && plane < 6) {
+            flushPending();
             clipPlaneEquation[plane][0] = a; clipPlaneEquation[plane][1] = b;
             clipPlaneEquation[plane][2] = c; clipPlaneEquation[plane][3] = d;
-            generation++;
+            dirty();
         }
     }
     public float[] getClipPlaneEquation(int plane) { return plane >= 0 && plane < 6 ? clipPlaneEquation[plane] : new float[4]; }

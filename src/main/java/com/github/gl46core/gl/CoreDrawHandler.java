@@ -55,6 +55,8 @@ public final class CoreDrawHandler {
         }
 
         try {
+        // Flush any pending immediate-mode vertices before this draw
+        ImmediateModeEmulator.INSTANCE.flush();
         CoreShaderProgram.INSTANCE.ensureInitialized();
 
         VertexFormat format = bufferBuilder.getVertexFormat();

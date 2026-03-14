@@ -183,6 +183,8 @@ public final class CoreVboDrawHandler {
     public static void draw(int mode, int first, int count, boolean isTerrain) {
         if (count <= 0) return;
 
+        // Flush any pending immediate-mode vertices before this draw
+        ImmediateModeEmulator.INSTANCE.flush();
         CoreShaderProgram.INSTANCE.ensureInitialized();
 
         if (!isTerrain) {

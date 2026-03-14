@@ -264,6 +264,8 @@ public final class DisplayListCache {
         List<Command> commands = lists.get(listId);
         if (commands == null || commands.isEmpty()) return;
 
+        // Flush any pending immediate-mode vertices before replay
+        ImmediateModeEmulator.INSTANCE.flush();
         CoreShaderProgram.INSTANCE.ensureInitialized();
         ensureReplayBuffers();
 

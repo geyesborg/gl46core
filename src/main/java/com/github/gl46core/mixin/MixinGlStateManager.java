@@ -731,6 +731,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void clear(int mask) {
+        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.flush();
         CoreShaderProgram.endFrame();
         GL11.glClear(mask);
         com.github.gl46core.GL46Core.onFrameTick();
@@ -772,6 +773,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void bindTexture(int texture) {
+        com.github.gl46core.gl.ImmediateModeEmulator.INSTANCE.flush();
         CoreTextureTracker.cancelDeletion(texture);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
     }

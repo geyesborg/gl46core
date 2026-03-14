@@ -295,6 +295,7 @@ public final class LegacyGLRedirects {
     }
 
     public static void glClear(int mask) {
+        ImmediateModeEmulator.INSTANCE.flush();
         org.lwjgl.opengl.GL11.glClear(mask);
     }
 
@@ -845,6 +846,7 @@ public final class LegacyGLRedirects {
     // ═══════════════════════════════════════════════════════════════════
 
     public static void glBindTexture(int target, int texture) {
+        ImmediateModeEmulator.INSTANCE.flush();
         CoreTextureTracker.cancelDeletion(texture);
         org.lwjgl.opengl.GL11.glBindTexture(target, texture);
     }

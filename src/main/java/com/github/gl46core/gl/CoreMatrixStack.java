@@ -279,6 +279,12 @@ public final class CoreMatrixStack {
     }
 
     private void markDirty(ThreadState s) {
+        // Flush any pending immediate-mode vertices BEFORE the matrix changes.
+        // Deferred batching accumulates vertices that were positioned for the
+        // current matrix — if we change the matrix first, the flush would draw
+        // those vertices with the wrong transform (e.g., Mojang logo drawn
+        // with progress bar projection).
+        ImmediateModeEmulator.INSTANCE.flush();
         switch (s.currentMode) {
             case GL_PROJECTION -> s.projectionDirty = true;
             case GL_MODELVIEW -> s.modelViewDirty = true;

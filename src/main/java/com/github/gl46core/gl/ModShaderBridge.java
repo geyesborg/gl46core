@@ -58,13 +58,20 @@ public final class ModShaderBridge {
     public static void onUseProgram(int program) {
         activeModProgram = program;
 
-        if (program == 0) return;
+        if (program == 0) {
+            CoreShaderProgram.INSTANCE.invalidateProgram();
+            return;
+        }
 
         // Skip our own shader program
         if (CoreShaderProgram.INSTANCE.isOurProgram(program)) {
             activeModProgram = 0;
             return;
         }
+
+        // External program bound — invalidate our cached binding so the
+        // next CoreShaderProgram.bind() re-issues glUseProgram.
+        CoreShaderProgram.INSTANCE.invalidateProgram();
 
         ProgramUniforms u = cache.get(program);
         if (u == null) {

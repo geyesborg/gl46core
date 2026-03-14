@@ -1,21 +1,23 @@
 package com.github.gl46core.gl;
 
 import com.github.gl46core.GL46Core;
-import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL31;
 import org.lwjgl.opengl.GL45;
 
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.Scanner;
 
 /**
- * Compiles and manages the core-profile shader program (core.vert + core.frag).
+ * Manages UBOs and dispatches to the correct shader variant.
+ *
+ * Instead of a single uber-shader with runtime branching, {@link ShaderVariants}
+ * lazily compiles specialized programs for each unique GL state combination.
+ * This class manages the shared UBO buffers and uploads uniform data.
+ *
  * Uses GL4.5 DSA UBOs for all uniform data — two buffer objects:
  *   - PerFrame (binding 0): matrices + lighting (208 bytes)
- *   - PerDraw  (binding 1): fog, alpha test, state flags (80 bytes)
+ *   - PerDraw  (binding 1): fog, alpha test, state flags (256 bytes)
  *
  * Format-dependent attribute presence (hasColor, hasTexCoord, hasNormal) is
  * handled via glVertexAttrib* default values instead of UBO flags, eliminating
@@ -91,6 +93,9 @@ public final class CoreShaderProgram {
     // buffer base bindings, so we must re-bind when the context changes.
     private volatile long lastBoundThread = -1;
 
+    // Track current program to skip redundant glUseProgram calls
+    private int lastProgramId = 0;
+
     // Cached vertex attrib defaults — skip redundant glVertexAttrib* calls
     private float lastColorR = -1, lastColorG = -1, lastColorB = -1, lastColorA = -1;
     private int lastLightMapDummy = -1; // 0=not bound, 1=bound
@@ -107,35 +112,6 @@ public final class CoreShaderProgram {
 
         RenderContext ctx = RenderContext.get();
 
-        String vertSrc = loadShaderSource("/assets/gl46core/shaders/core.vert");
-        String fragSrc = loadShaderSource("/assets/gl46core/shaders/core.frag");
-
-        int vert = compileShader(GL20.GL_VERTEX_SHADER, vertSrc);
-        int frag = compileShader(GL20.GL_FRAGMENT_SHADER, fragSrc);
-
-        if (vert == 0 || frag == 0) {
-            GL46Core.LOGGER.error("Shader compilation failed — core shader program will not be available");
-            if (vert != 0) GL20.glDeleteShader(vert);
-            if (frag != 0) GL20.glDeleteShader(frag);
-            return;
-        }
-
-        int programId = GL20.glCreateProgram();
-        GL20.glAttachShader(programId, vert);
-        GL20.glAttachShader(programId, frag);
-
-        GL20.glLinkProgram(programId);
-        if (GL20.glGetProgrami(programId, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            String log = GL20.glGetProgramInfoLog(programId, 4096);
-            GL46Core.LOGGER.error("Shader link failed:\n{}", log);
-            GL20.glDeleteProgram(programId);
-            return;
-        }
-
-        GL20.glDeleteShader(vert);
-        GL20.glDeleteShader(frag);
-        ctx.store(RenderContext.GL.SHADER_PROGRAM, programId);
-
         // Create UBOs with DSA (GL4.5) via RenderContext
         int perFrameUbo = ctx.createBuffer(RenderContext.GL.PER_FRAME_UBO);
         int perDrawUbo  = ctx.createBuffer(RenderContext.GL.PER_DRAW_UBO);
@@ -151,8 +127,8 @@ public final class CoreShaderProgram {
         // to prevent NVIDIA debug warning about texture object 0 with no base level
         ctx.createDummyTexture(RenderContext.GL.DUMMY_TEXTURE);
 
-        GL46Core.LOGGER.info("Core shader program compiled and linked (id={}) with DSA UBOs (pf={}, pd={})",
-            programId, perFrameUbo, perDrawUbo);
+        GL46Core.LOGGER.info("Shader variant system initialized with DSA UBOs (pf={}, pd={})",
+            perFrameUbo, perDrawUbo);
     }
 
     /**
@@ -165,36 +141,46 @@ public final class CoreShaderProgram {
      */
     public void bind(boolean hasColor, boolean hasTexCoord, boolean hasNormal, boolean hasLightMap) {
         RenderContext ctx = RenderContext.get();
-        int programId = ctx.handle(RenderContext.GL.SHADER_PROGRAM);
-        if (programId == 0) return;
         int perFrameUbo = ctx.handle(RenderContext.GL.PER_FRAME_UBO);
         int perDrawUbo  = ctx.handle(RenderContext.GL.PER_DRAW_UBO);
+        if (perFrameUbo == 0 || perDrawUbo == 0) return;
 
         // Ensure this thread starts with correct default state (texture2D enabled).
         // Modern Splash's thread can leave texture2DEnabled[0]=false in the shared
         // CoreStateTracker before the Client thread starts rendering.
         CoreStateTracker.INSTANCE.ensureThreadDefaults();
 
-        // Skip glUseProgram if our program is already bound
-        GL20.glUseProgram(programId);
-
         // Ensure UBO binding points are set for this context.
         // glBindBufferBase is per-context state — shared GL contexts
         // (e.g. Modern Splash's SharedDrawable) don't inherit these.
+        // Must happen BEFORE variant selection so lastProgramId is correct.
         long currentThread = Thread.currentThread().getId();
         if (currentThread != lastBoundThread) {
             GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, perFrameUbo);
             GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 1, perDrawUbo);
             lastBoundThread = currentThread;
-            // Force full re-upload on context switch
+            // Force full re-upload and program re-bind on context switch
             lastStateGeneration = -1;
             lastMvDirty = true;
             lastProjDirty = true;
             lastFormatFlags = -1;
+            lastProgramId = 0;
+        }
+
+        CoreStateTracker state = CoreStateTracker.INSTANCE;
+
+        // Select shader variant based on current GL state
+        int variantKey = ShaderVariants.computeKey(state, hasLightMap);
+        int programId = ShaderVariants.getProgram(variantKey);
+        if (programId == 0) return;
+
+        // Skip glUseProgram if this variant is already bound on this context
+        if (programId != lastProgramId) {
+            GL20.glUseProgram(programId);
+            lastProgramId = programId;
         }
 
         CoreMatrixStack ms = CoreMatrixStack.INSTANCE;
-        CoreStateTracker state = CoreStateTracker.INSTANCE;
 
         // Set default vertex attribute values for disabled attributes.
         // glVertexAttrib* is context state (not per-VAO), and is only read
@@ -317,47 +303,28 @@ public final class CoreShaderProgram {
     /** Unbind shader */
     public void unbind() {
         GL20.glUseProgram(0);
+        lastProgramId = 0;
+    }
+
+    /**
+     * Invalidate the cached program binding. Must be called whenever an
+     * external glUseProgram happens (mod shaders, splash renderer, etc.)
+     * so the next bind() re-issues glUseProgram for our variant.
+     */
+    public void invalidateProgram() {
+        lastProgramId = 0;
     }
 
     public int getProgramId() {
-        return RenderContext.get().handle(RenderContext.GL.SHADER_PROGRAM);
+        return lastProgramId;
     }
 
     public boolean isOurProgram(int program) {
-        return program != 0 && program == RenderContext.get().handle(RenderContext.GL.SHADER_PROGRAM);
+        return ShaderVariants.isOurProgram(program);
     }
 
     public int getPerDrawUbo() {
         return RenderContext.get().handle(RenderContext.GL.PER_DRAW_UBO);
     }
 
-    // ── Shader compilation ──
-
-    private int compileShader(int type, String source) {
-        int shader = GL20.glCreateShader(type);
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            String log = GL20.glGetShaderInfoLog(shader, 4096);
-            String typeName = type == GL20.GL_VERTEX_SHADER ? "vertex" : "fragment";
-            GL46Core.LOGGER.error("{} shader compilation failed:\n{}", typeName, log);
-            GL20.glDeleteShader(shader);
-            return 0;
-        }
-        return shader;
-    }
-
-    private String loadShaderSource(String path) {
-        try (InputStream is = CoreShaderProgram.class.getResourceAsStream(path)) {
-            if (is == null) {
-                GL46Core.LOGGER.error("Shader resource not found: {}", path);
-                return "";
-            }
-            Scanner scanner = new Scanner(is, "UTF-8").useDelimiter("\\A");
-            return scanner.hasNext() ? scanner.next() : "";
-        } catch (Exception e) {
-            GL46Core.LOGGER.error("Failed to load shader: {}", path, e);
-            return "";
-        }
-    }
 }
