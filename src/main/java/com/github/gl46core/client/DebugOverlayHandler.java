@@ -3,6 +3,7 @@ package com.github.gl46core.client;
 import com.github.gl46core.api.debug.RenderProfiler;
 import com.github.gl46core.api.render.FrameOrchestrator;
 import com.github.gl46core.api.render.GlobalLightState;
+import com.github.gl46core.api.render.PassType;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
@@ -23,6 +24,8 @@ public final class DebugOverlayHandler {
     @SubscribeEvent
     public void onDebugText(RenderGameOverlayEvent.Text event) {
         if (!net.minecraft.client.Minecraft.getMinecraft().gameSettings.showDebugInfo) return;
+
+        FrameOrchestrator.INSTANCE.setActivePass(PassType.DEBUG_OVERLAY);
 
         RenderProfiler p = RenderProfiler.INSTANCE;
 
