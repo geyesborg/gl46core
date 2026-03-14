@@ -54,6 +54,9 @@ public final class LightBuffer {
      */
     public void clear() {
         count = 0;
+        if (stagingBuffer != null) {
+            stagingBuffer.clear(); // reset limit to capacity for absolute puts
+        }
     }
 
     /**

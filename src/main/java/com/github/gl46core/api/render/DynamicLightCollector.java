@@ -38,6 +38,7 @@ public final class DynamicLightCollector {
     private int totalProvidersPolled;
 
     private boolean initialized;
+    private long lastCollectFrame = -1;
 
     private DynamicLightCollector() {}
 
@@ -63,9 +64,12 @@ public final class DynamicLightCollector {
 
     /**
      * Collect lights from all registered DynamicLightProviders.
+     * Skips if already collected this frame (MC calls renderWorldPass multiple times).
      */
     public void collect(FrameContext frame) {
         ensureInit();
+        if (frame.getFrameIndex() == lastCollectFrame) return;
+        lastCollectFrame = frame.getFrameIndex();
 
         List<DynamicLightProvider> providers = RenderRegistry.INSTANCE.getDynamicLightProviders();
         totalProvidersPolled = providers.size();

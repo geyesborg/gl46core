@@ -53,6 +53,10 @@ public class GL46Core {
         // Register debug overlay keybind (F4)
         com.github.gl46core.client.DebugOverlayHandler.register();
 
+        // Register built-in dynamic light provider (held items, blazes, etc.)
+        com.github.gl46core.api.hook.RenderRegistry.INSTANCE.registerDynamicLightProvider(
+            com.github.gl46core.api.render.VanillaDynamicLightProvider.INSTANCE);
+
         logDeprecatedUsageSummary();
     }
 
