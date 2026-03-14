@@ -227,7 +227,10 @@ public final class BuiltinPasses {
                 case UI:
                 case DEBUG_OVERLAY:
                     flags = PassData.FLAG_BLENDING;
-                    passData.setLightingMode(PassData.LIGHTING_UNLIT);
+                    // Use FULL: MC's RenderItem enables GL_LIGHTING for 3D block
+                    // models in GUI. Shader variant LIGHTING_ENABLED #ifdef gates
+                    // whether lighting runs; the pass should not suppress it.
+                    passData.setLightingMode(PassData.LIGHTING_FULL);
                     break;
                 default:
                     break;
