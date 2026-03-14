@@ -1,6 +1,8 @@
 package com.github.gl46core.client;
 
 import com.github.gl46core.api.debug.RenderProfiler;
+import com.github.gl46core.api.render.FrameOrchestrator;
+import com.github.gl46core.api.render.GlobalLightState;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
@@ -60,5 +62,24 @@ public final class DebugOverlayHandler {
         com.github.gl46core.gl.ModelGeometryCache mc = com.github.gl46core.gl.ModelGeometryCache.INSTANCE;
         event.getRight().add(String.format("ModelCache: %d cached | %d hits | %d misses | %d draws",
                 mc.getCacheSize(), mc.getLastHits(), mc.getLastMisses(), mc.getLastDraws()));
+
+        GlobalLightState gl = FrameOrchestrator.INSTANCE.getFrameContext().getGlobalLight();
+        int lf = gl.getLightingFlags();
+        StringBuilder flags = new StringBuilder();
+        if ((lf & GlobalLightState.FLAG_HAS_SKY) != 0) flags.append("SKY ");
+        if ((lf & GlobalLightState.FLAG_NIGHT) != 0) flags.append("NIGHT ");
+        if ((lf & GlobalLightState.FLAG_NETHER) != 0) flags.append("NETHER ");
+        if ((lf & GlobalLightState.FLAG_END) != 0) flags.append("END ");
+        if ((lf & GlobalLightState.FLAG_RAINING) != 0) flags.append("RAIN ");
+        if ((lf & GlobalLightState.FLAG_THUNDERING) != 0) flags.append("THUNDER ");
+        event.getRight().add(String.format("Light: sky=%.2f blk=%.1f wDark=%.2f [%s]",
+                gl.getSkylightStrength(), gl.getBlockLightGlobalScale(),
+                gl.getWeatherDarken(), flags.toString().trim()));
+
+        com.github.gl46core.api.render.FogState fog = FrameOrchestrator.INSTANCE.getFrameContext().getFog();
+        String fogMode = fog.getMode() == 0x2601 ? "LINEAR" : fog.getMode() == 0x0800 ? "EXP" : fog.getMode() == 0x0801 ? "EXP2" : "0x" + Integer.toHexString(fog.getMode());
+        event.getRight().add(String.format("Fog: %s start=%.0f end=%.0f d=%.4f col=(%.2f,%.2f,%.2f)",
+                fogMode, fog.getStart(), fog.getEnd(), fog.getDensity(),
+                fog.getR(), fog.getG(), fog.getB()));
     }
 }
