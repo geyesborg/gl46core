@@ -5,6 +5,13 @@ import com.github.gl46core.api.render.FrameContext;
 import com.github.gl46core.api.render.SceneData;
 import com.github.gl46core.api.render.gpu.RenderTargetManager;
 import com.github.gl46core.api.render.gpu.RenderTarget;
+import net.minecraft.block.material.Material;
+import net.minecraft.client.Minecraft;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemBlock;
+import net.minecraft.item.ItemStack;
+import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL20;
 
 import java.util.LinkedHashMap;
@@ -126,6 +133,9 @@ public final class UniformBridge {
 
     // Reusable float buffer for matrix uploads (16 floats)
     private final float[] matBuf = new float[16];
+
+    // Scratch matrix for computing inverses
+    private final Matrix4f scratchMat = new Matrix4f();
 
     public UniformBridge() {
         // Define all known OptiFine/Iris uniforms
@@ -280,10 +290,32 @@ public final class UniformBridge {
                 GL20.glUniformMatrix4fv(e.location, false, matBuf);
                 break;
             case GBUFFER_MODEL_VIEW_INVERSE:
+                readMat4(buf, 0); // viewMatrix at offset 0
+                scratchMat.set(
+                    matBuf[0], matBuf[1], matBuf[2], matBuf[3],
+                    matBuf[4], matBuf[5], matBuf[6], matBuf[7],
+                    matBuf[8], matBuf[9], matBuf[10], matBuf[11],
+                    matBuf[12], matBuf[13], matBuf[14], matBuf[15]
+                ).invert();
+                scratchMat.get(matBuf);
+                GL20.glUniformMatrix4fv(e.location, false, matBuf);
+                break;
             case GBUFFER_PROJECTION_INVERSE:
+                readMat4(buf, 64); // projectionMatrix at offset 64
+                scratchMat.set(
+                    matBuf[0], matBuf[1], matBuf[2], matBuf[3],
+                    matBuf[4], matBuf[5], matBuf[6], matBuf[7],
+                    matBuf[8], matBuf[9], matBuf[10], matBuf[11],
+                    matBuf[12], matBuf[13], matBuf[14], matBuf[15]
+                ).invert();
+                scratchMat.get(matBuf);
+                GL20.glUniformMatrix4fv(e.location, false, matBuf);
+                break;
             case SHADOW_MODEL_VIEW:
             case SHADOW_PROJECTION:
-                // TODO: compute inverses and shadow matrices
+                // Identity until shadow pass is implemented
+                scratchMat.identity().get(matBuf);
+                GL20.glUniformMatrix4fv(e.location, false, matBuf);
                 break;
 
             // ── Vectors ──
@@ -356,7 +388,7 @@ public final class UniformBridge {
                 break;
             }
             case IS_EYE_IN_WATER:
-                GL20.glUniform1i(e.location, 0); // TODO: detect from camera block
+                GL20.glUniform1i(e.location, getEyeInWaterState());
                 break;
             case FRAME_COUNTER:
                 GL20.glUniform1i(e.location, buf.getInt(408)); // frameIndex
@@ -371,8 +403,10 @@ public final class UniformBridge {
                 GL20.glUniform1i(e.location, rtm.isInitialized() ? rtm.getScreenHeight() : 0);
                 break;
             case HELD_ITEM_ID:
+                GL20.glUniform1i(e.location, getHeldItemId());
+                break;
             case HELD_BLOCK_LIGHT_VALUE:
-                GL20.glUniform1i(e.location, 0); // TODO: held item detection
+                GL20.glUniform1i(e.location, getHeldBlockLightValue());
                 break;
 
             // ── Samplers ──
@@ -406,5 +440,45 @@ public final class UniformBridge {
         for (int i = 0; i < 16; i++) {
             matBuf[i] = buf.getFloat(offset + i * 4);
         }
+    }
+
+    /**
+     * Detect if the camera is inside water or lava.
+     * OptiFine convention: 0 = air, 1 = water, 2 = lava.
+     */
+    private static int getEyeInWaterState() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null) return 0;
+        if (mc.player.isInsideOfMaterial(Material.WATER)) return 1;
+        if (mc.player.isInsideOfMaterial(Material.LAVA))  return 2;
+        return 0;
+    }
+
+    /**
+     * Get the numeric item ID of the item held in the main hand.
+     * Returns -1 if empty (OptiFine convention).
+     */
+    private static int getHeldItemId() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null) return -1;
+        ItemStack stack = mc.player.getHeldItemMainhand();
+        if (stack.isEmpty()) return -1;
+        return Item.getIdFromItem(stack.getItem());
+    }
+
+    /**
+     * Get the block light value of the item held in the main hand.
+     * Returns 0 if the held item is not a block or is empty.
+     */
+    private static int getHeldBlockLightValue() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null) return 0;
+        ItemStack stack = mc.player.getHeldItemMainhand();
+        if (stack.isEmpty()) return 0;
+        Item item = stack.getItem();
+        if (item instanceof ItemBlock) {
+            return ((ItemBlock) item).getBlock().getDefaultState().getLightValue();
+        }
+        return 0;
     }
 }
