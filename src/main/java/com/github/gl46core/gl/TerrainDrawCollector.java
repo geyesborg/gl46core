@@ -130,39 +130,48 @@ public final class TerrainDrawCollector {
         CoreShaderProgram shader = CoreShaderProgram.INSTANCE;
         shader.ensureInitialized();
 
+        ObjectBuffer objBuf = ObjectBuffer.INSTANCE;
+        objBuf.ensureInitialized();
+
         // Capture base matrices (set by MC before renderChunkLayer)
         CoreMatrixStack ms = CoreMatrixStack.INSTANCE;
         baseProj.set(ms.getProjection());
         baseMV.set(ms.getModelView());
 
-        // Bind shader variant + upload scene/material UBOs once.
-        // This also uploads PerObject with current matrices (we overwrite per chunk).
+        // ── Pass 1: Pack all transforms into ObjectBuffer ──
+        // Compute per-chunk MVP/MV and find max vertex count in one pass
+        objBuf.begin();
+        int maxVerts = 0;
+        for (int i = 0; i < count; i++) {
+            DrawPacket p = packets[i];
+            baseMV.translate(p.getTranslateX(), p.getTranslateY(), p.getTranslateZ(), chunkMV);
+            baseProj.mul(chunkMV, chunkMVP);
+            objBuf.submitTransform(chunkMVP, chunkMV);
+
+            int v = p.getVertexCount();
+            if (v > maxVerts) maxVerts = v;
+        }
+        objBuf.upload(); // ONE bulk upload to GPU
+
+        // Bind shader variant + upload scene/material UBOs once
         shader.bind(true, true, false, true);
 
         // Configure terrain VAO format once (DSA), then only swap VBO per chunk
         CoreVboDrawHandler.ensureTerrainVaoDSA();
 
-        // All terrain is GL_QUADS — find max vertex count, ensure EBO + bind ONCE
-        int maxVerts = 0;
-        for (int i = 0; i < count; i++) {
-            int v = packets[i].getVertexCount();
-            if (v > maxVerts) maxVerts = v;
-        }
+        // EBO: ensure + bind once (all terrain is GL_QUADS)
         int ebo = QuadIndexBuffer.ensure(maxVerts / 4);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
 
+        // ── Pass 2: Issue draws with per-chunk binding range (no data transfer) ──
         for (int i = 0; i < count; i++) {
             DrawPacket p = packets[i];
 
-            // Fast VBO swap — ONE DSA call instead of re-specifying all attrib pointers
+            // Fast VBO swap — ONE DSA call
             CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
 
-            // Compute chunk-specific matrices directly (no push/translate/pop)
-            baseMV.translate(p.getTranslateX(), p.getTranslateY(), p.getTranslateZ(), chunkMV);
-            baseProj.mul(chunkMV, chunkMVP);
-
-            // Upload pre-computed matrices directly to PerObject UBO
-            shader.uploadMatricesDirect(chunkMVP, chunkMV);
+            // Select this chunk's transform slice (glBindBufferRange — state change only)
+            objBuf.bindObject(i);
 
             // Draw — GL_QUADS→GL_TRIANGLES via pre-bound index buffer
             int vertexCount = p.getVertexCount();
@@ -172,7 +181,8 @@ public final class TerrainDrawCollector {
             RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
         }
 
-        // Invalidate matrix cache so next bind() re-uploads from CoreMatrixStack
+        // Restore original PerObject UBO binding for non-terrain rendering
+        objBuf.restorePerObjectBinding();
         shader.invalidateMatrices();
 
         // Unbind VBO (matches vanilla cleanup)
