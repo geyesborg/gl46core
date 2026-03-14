@@ -51,8 +51,9 @@ public final class DebugOverlayHandler {
             long bulkBytes = (long) objCount * ob.getAlignedStride();
             String bulkStr = bulkBytes < 1024 ? bulkBytes + "B"
                     : String.format("%.1fKB", bulkBytes / 1024.0);
-            event.getRight().add(String.format("ObjectBuffer: stride=%d | bulk=%s | align=%d",
-                    ob.getAlignedStride(), bulkStr, ob.getUboAlignment()));
+            String mode = ob.isSsboMode() ? "SSBO" : "UBO-range";
+            event.getRight().add(String.format("ObjectBuffer [%s]: stride=%d | bulk=%s | 2 GL/chunk",
+                    mode, ob.getAlignedStride(), bulkStr));
         }
     }
 }
