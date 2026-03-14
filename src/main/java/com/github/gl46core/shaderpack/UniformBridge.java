@@ -8,10 +8,14 @@ import com.github.gl46core.api.render.gpu.RenderTarget;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.init.MobEffects;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
+import net.minecraft.potion.PotionEffect;
+import net.minecraft.util.EnumHand;
 import org.joml.Matrix4f;
+import org.joml.Vector3d;
 import org.lwjgl.opengl.GL20;
 
 import java.util.LinkedHashMap;
@@ -74,13 +78,17 @@ public final class UniformBridge {
         GBUFFER_PREVIOUS_PROJECTION,
         SHADOW_MODEL_VIEW,
         SHADOW_PROJECTION,
+        SHADOW_MODEL_VIEW_INVERSE,
+        SHADOW_PROJECTION_INVERSE,
 
         // Vectors
         CAMERA_POSITION,
+        PREVIOUS_CAMERA_POSITION,
         SUN_POSITION,
         MOON_POSITION,
         UP_POSITION,
         FOG_COLOR,
+        SKY_COLOR,
 
         // Scalars — float
         SUN_ANGLE,
@@ -93,9 +101,16 @@ public final class UniformBridge {
         FOG_START,
         FOG_END,
         FOG_DENSITY,
+        ASPECT_RATIO,
+        EYE_ALTITUDE,
+        SCREEN_BRIGHTNESS,
+        NIGHT_VISION,
+        BLINDNESS,
 
         // Scalars — int
         WORLD_TIME,
+        WORLD_DAY,
+        MOON_PHASE,
         FOG_MODE,
         IS_EYE_IN_WATER,
         FRAME_COUNTER,
@@ -104,6 +119,8 @@ public final class UniformBridge {
         VIEW_HEIGHT,
         HELD_ITEM_ID,
         HELD_BLOCK_LIGHT_VALUE,
+        HELD_ITEM_ID2,
+        HELD_BLOCK_LIGHT_VALUE2,
 
         // Samplers (int — texture unit)
         SAMPLER_TEXTURE,
@@ -150,13 +167,17 @@ public final class UniformBridge {
         defs.put("gbufferPreviousProjection",    UploadType.GBUFFER_PREVIOUS_PROJECTION);
         defs.put("shadowModelView",              UploadType.SHADOW_MODEL_VIEW);
         defs.put("shadowProjection",             UploadType.SHADOW_PROJECTION);
+        defs.put("shadowModelViewInverse",       UploadType.SHADOW_MODEL_VIEW_INVERSE);
+        defs.put("shadowProjectionInverse",      UploadType.SHADOW_PROJECTION_INVERSE);
 
         // Vectors
-        defs.put("cameraPosition",   UploadType.CAMERA_POSITION);
-        defs.put("sunPosition",      UploadType.SUN_POSITION);
-        defs.put("moonPosition",     UploadType.MOON_POSITION);
-        defs.put("upPosition",       UploadType.UP_POSITION);
-        defs.put("fogColor",         UploadType.FOG_COLOR);
+        defs.put("cameraPosition",         UploadType.CAMERA_POSITION);
+        defs.put("previousCameraPosition", UploadType.PREVIOUS_CAMERA_POSITION);
+        defs.put("sunPosition",            UploadType.SUN_POSITION);
+        defs.put("moonPosition",           UploadType.MOON_POSITION);
+        defs.put("upPosition",             UploadType.UP_POSITION);
+        defs.put("fogColor",               UploadType.FOG_COLOR);
+        defs.put("skyColor",               UploadType.SKY_COLOR);
 
         // Float scalars
         defs.put("sunAngle",         UploadType.SUN_ANGLE);
@@ -169,9 +190,16 @@ public final class UniformBridge {
         defs.put("fogStart",         UploadType.FOG_START);
         defs.put("fogEnd",           UploadType.FOG_END);
         defs.put("fogDensity",       UploadType.FOG_DENSITY);
+        defs.put("aspectRatio",      UploadType.ASPECT_RATIO);
+        defs.put("eyeAltitude",      UploadType.EYE_ALTITUDE);
+        defs.put("screenBrightness", UploadType.SCREEN_BRIGHTNESS);
+        defs.put("nightVision",      UploadType.NIGHT_VISION);
+        defs.put("blindness",        UploadType.BLINDNESS);
 
         // Int scalars
         defs.put("worldTime",           UploadType.WORLD_TIME);
+        defs.put("worldDay",            UploadType.WORLD_DAY);
+        defs.put("moonPhase",           UploadType.MOON_PHASE);
         defs.put("fogMode",             UploadType.FOG_MODE);
         defs.put("isEyeInWater",        UploadType.IS_EYE_IN_WATER);
         defs.put("frameCounter",        UploadType.FRAME_COUNTER);
@@ -180,6 +208,8 @@ public final class UniformBridge {
         defs.put("viewHeight",          UploadType.VIEW_HEIGHT);
         defs.put("heldItemId",          UploadType.HELD_ITEM_ID);
         defs.put("heldBlockLightValue", UploadType.HELD_BLOCK_LIGHT_VALUE);
+        defs.put("heldItemId2",         UploadType.HELD_ITEM_ID2);
+        defs.put("heldBlockLightValue2",UploadType.HELD_BLOCK_LIGHT_VALUE2);
 
         // Samplers
         defs.put("texture",      UploadType.SAMPLER_TEXTURE);
@@ -313,6 +343,8 @@ public final class UniformBridge {
                 break;
             case SHADOW_MODEL_VIEW:
             case SHADOW_PROJECTION:
+            case SHADOW_MODEL_VIEW_INVERSE:
+            case SHADOW_PROJECTION_INVERSE:
                 // Identity until shadow pass is implemented
                 scratchMat.identity().get(matBuf);
                 GL20.glUniformMatrix4fv(e.location, false, matBuf);
@@ -323,6 +355,11 @@ public final class UniformBridge {
                 GL20.glUniform3f(e.location,
                         buf.getFloat(192), buf.getFloat(196), buf.getFloat(200));
                 break;
+            case PREVIOUS_CAMERA_POSITION: {
+                Vector3d prev = ctx.getCamera().getPrevPosition();
+                GL20.glUniform3f(e.location, (float) prev.x, (float) prev.y, (float) prev.z);
+                break;
+            }
             case SUN_POSITION:
                 GL20.glUniform3f(e.location,
                         buf.getFloat(208), buf.getFloat(212), buf.getFloat(216));
@@ -337,6 +374,11 @@ public final class UniformBridge {
             case FOG_COLOR: {
                 com.github.gl46core.api.render.FogState fog = ctx.getFog();
                 GL20.glUniform3f(e.location, fog.getR(), fog.getG(), fog.getB());
+                break;
+            }
+            case SKY_COLOR: {
+                com.github.gl46core.api.render.DimensionState dim = ctx.getDimension();
+                GL20.glUniform3f(e.location, dim.getSkyColorR(), dim.getSkyColorG(), dim.getSkyColorB());
                 break;
             }
 
@@ -377,10 +419,35 @@ public final class UniformBridge {
                 GL20.glUniform1f(e.location, fog.getDensity());
                 break;
             }
+            case ASPECT_RATIO:
+                if (rtm.isInitialized() && rtm.getScreenHeight() > 0) {
+                    GL20.glUniform1f(e.location, (float) rtm.getScreenWidth() / rtm.getScreenHeight());
+                } else {
+                    GL20.glUniform1f(e.location, 1.0f);
+                }
+                break;
+            case EYE_ALTITUDE:
+                GL20.glUniform1f(e.location, buf.getFloat(196)); // cameraPosition.y at offset 196
+                break;
+            case SCREEN_BRIGHTNESS:
+                GL20.glUniform1f(e.location, Minecraft.getMinecraft().gameSettings.gammaSetting);
+                break;
+            case NIGHT_VISION:
+                GL20.glUniform1f(e.location, getNightVisionStrength());
+                break;
+            case BLINDNESS:
+                GL20.glUniform1f(e.location, getBlindnessStrength());
+                break;
 
             // ── Int scalars ──
             case WORLD_TIME:
                 GL20.glUniform1i(e.location, (int)(buf.getFloat(352) * 24000) % 24000);
+                break;
+            case WORLD_DAY:
+                GL20.glUniform1i(e.location, (int)(buf.getFloat(352) * 24000) / 24000);
+                break;
+            case MOON_PHASE:
+                GL20.glUniform1i(e.location, getMoonPhase());
                 break;
             case FOG_MODE: {
                 com.github.gl46core.api.render.FogState fog = ctx.getFog();
@@ -407,6 +474,12 @@ public final class UniformBridge {
                 break;
             case HELD_BLOCK_LIGHT_VALUE:
                 GL20.glUniform1i(e.location, getHeldBlockLightValue());
+                break;
+            case HELD_ITEM_ID2:
+                GL20.glUniform1i(e.location, getHeldItemId(EnumHand.OFF_HAND));
+                break;
+            case HELD_BLOCK_LIGHT_VALUE2:
+                GL20.glUniform1i(e.location, getHeldBlockLightValue(EnumHand.OFF_HAND));
                 break;
 
             // ── Samplers ──
@@ -459,9 +532,17 @@ public final class UniformBridge {
      * Returns -1 if empty (OptiFine convention).
      */
     private static int getHeldItemId() {
+        return getHeldItemId(EnumHand.MAIN_HAND);
+    }
+
+    /**
+     * Get the numeric item ID of the item held in the given hand.
+     * Returns -1 if empty (OptiFine convention).
+     */
+    private static int getHeldItemId(EnumHand hand) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null) return -1;
-        ItemStack stack = mc.player.getHeldItemMainhand();
+        ItemStack stack = mc.player.getHeldItem(hand);
         if (stack.isEmpty()) return -1;
         return Item.getIdFromItem(stack.getItem());
     }
@@ -471,14 +552,60 @@ public final class UniformBridge {
      * Returns 0 if the held item is not a block or is empty.
      */
     private static int getHeldBlockLightValue() {
+        return getHeldBlockLightValue(EnumHand.MAIN_HAND);
+    }
+
+    /**
+     * Get the block light value of the item held in the given hand.
+     * Returns 0 if the held item is not a block or is empty.
+     */
+    private static int getHeldBlockLightValue(EnumHand hand) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null) return 0;
-        ItemStack stack = mc.player.getHeldItemMainhand();
+        ItemStack stack = mc.player.getHeldItem(hand);
         if (stack.isEmpty()) return 0;
         Item item = stack.getItem();
         if (item instanceof ItemBlock) {
             return ((ItemBlock) item).getBlock().getDefaultState().getLightValue();
         }
         return 0;
+    }
+
+    /**
+     * Get the night vision potion strength (0.0 = none, 1.0 = full).
+     * OptiFine uses the amplifier + duration fraction.
+     */
+    private static float getNightVisionStrength() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null) return 0.0f;
+        PotionEffect effect = mc.player.getActivePotionEffect(MobEffects.NIGHT_VISION);
+        if (effect == null) return 0.0f;
+        // OptiFine convention: 1.0 when active, scaled by remaining duration in last 10 seconds
+        int remaining = effect.getDuration();
+        if (remaining > 200) return 1.0f; // more than 10 seconds left
+        return remaining / 200.0f; // fade out in last 10 seconds
+    }
+
+    /**
+     * Get the blindness potion strength (0.0 = none, 1.0 = full).
+     */
+    private static float getBlindnessStrength() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null) return 0.0f;
+        PotionEffect effect = mc.player.getActivePotionEffect(MobEffects.BLINDNESS);
+        if (effect == null) return 0.0f;
+        // Ramp up over first 20 ticks
+        int duration = effect.getDuration();
+        if (duration > 20) return 1.0f;
+        return duration / 20.0f;
+    }
+
+    /**
+     * Get the current moon phase (0-7).
+     */
+    private static int getMoonPhase() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.world == null) return 0;
+        return mc.world.getMoonPhase();
     }
 }

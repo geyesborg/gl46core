@@ -105,8 +105,9 @@ public final class ShaderpackFormat {
     static {
         Map<PassType, String> m = new LinkedHashMap<>();
 
-        // Shadow
+        // Shadow — both sub-passes use the same shadow program
         m.put(PassType.SHADOW_OPAQUE, SHADOW);
+        m.put(PassType.SHADOW_CUTOUT, SHADOW);
 
         // Sky
         m.put(PassType.SKY, GBUFFERS_SKYBASIC);

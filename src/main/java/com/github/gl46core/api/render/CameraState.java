@@ -23,8 +23,9 @@ public final class CameraState {
     private final Matrix4f prevViewMatrix   = new Matrix4f();
     private final Matrix4f prevProjection   = new Matrix4f();
 
-    private final Vector3d position = new Vector3d();
-    private final Vector3f lookDir  = new Vector3f();
+    private final Vector3d position     = new Vector3d();
+    private final Vector3d prevPosition = new Vector3d();
+    private final Vector3f lookDir      = new Vector3f();
 
     private float partialTicks;
     private float fov;
@@ -55,6 +56,7 @@ public final class CameraState {
         this.projectionMatrix.invert(this.invProjection);
         this.viewProjection.invert(this.invViewProj);
 
+        this.prevPosition.set(this.position);
         this.position.set(camX, camY, camZ);
 
         // Extract look direction from view matrix (negative Z column)
@@ -80,6 +82,7 @@ public final class CameraState {
     public Matrix4f getPrevProjection()   { return prevProjection; }
 
     public Vector3d getPosition()      { return position; }
+    public Vector3d getPrevPosition()   { return prevPosition; }
     public Vector3f getLookDir()        { return lookDir; }
     public float    getPartialTicks()  { return partialTicks; }
     public float    getFov()           { return fov; }
