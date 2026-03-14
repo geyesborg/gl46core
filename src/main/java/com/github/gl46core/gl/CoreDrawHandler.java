@@ -9,6 +9,7 @@ import org.lwjgl.opengl.GL45;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Core-profile replacement for WorldVertexBufferUploader.draw().
@@ -23,10 +24,24 @@ import java.util.List;
  */
 public final class CoreDrawHandler {
 
-    private static int vao = 0;
-    private static int vbo = 0;
-    private static int vboCapacity = 0;
-    private static VertexFormat lastFormat = null;
+    /**
+     * Per-thread draw state. VAOs are per-GL-context (not shared between
+     * contexts), so each thread that renders (main thread, Modern Splash's
+     * SharedDrawable thread, etc.) needs its own VAO + VBO + format cache.
+     */
+    private static class ThreadDrawState {
+        int vao;
+        int vbo;
+        int vboCapacity;
+        VertexFormat lastFormat;
+    }
+
+    private static final ThreadLocal<ThreadDrawState> threadState =
+            ThreadLocal.withInitial(ThreadDrawState::new);
+
+    // Track all thread states for cleanup on shutdown
+    private static final ConcurrentHashMap<Long, ThreadDrawState> allStates = new ConcurrentHashMap<>();
+
     private CoreDrawHandler() {}
 
     /**
@@ -39,6 +54,7 @@ public final class CoreDrawHandler {
             return;
         }
 
+        try {
         CoreShaderProgram.INSTANCE.ensureInitialized();
 
         VertexFormat format = bufferBuilder.getVertexFormat();
@@ -83,16 +99,22 @@ public final class CoreDrawHandler {
             }
         }
 
-        // Create VAO/VBO/EBO once with DSA
-        if (vao == 0) {
+        // Get or create per-thread VAO/VBO (VAOs are per-GL-context)
+        ThreadDrawState ts = threadState.get();
+        if (ts.vao == 0) {
             int[] vaos = new int[1];
             GL45.glCreateVertexArrays(vaos);
-            vao = vaos[0];
-
+            ts.vao = vaos[0];
             int[] bufs = new int[1];
             GL45.glCreateBuffers(bufs);
-            vbo = bufs[0];
+            ts.vbo = bufs[0];
+            allStates.put(Thread.currentThread().getId(), ts);
+            com.github.gl46core.GL46Core.LOGGER.debug(
+                    "[CoreDrawHandler] Created thread-local VAO={} VBO={} for thread {}",
+                    ts.vao, ts.vbo, Thread.currentThread().getName());
         }
+        int vao = ts.vao;
+        int vbo = ts.vbo;
 
         GL30.glBindVertexArray(vao);
         CoreVboDrawHandler.setTerrainVaoUnbound();
@@ -101,9 +123,9 @@ public final class CoreDrawHandler {
         int dataSize = vertexCount * stride;
         data.position(0);
         data.limit(dataSize);
-        if (dataSize > vboCapacity) {
+        if (dataSize > ts.vboCapacity) {
             // Need to reallocate — DSA immutable storage requires recreating the buffer
-            int newCapacity = Math.max(dataSize, vboCapacity * 2);
+            int newCapacity = Math.max(dataSize, ts.vboCapacity * 2);
             int[] bufs = new int[1];
             GL45.glCreateBuffers(bufs);
             int newVbo = bufs[0];
@@ -111,16 +133,17 @@ public final class CoreDrawHandler {
             // Re-attach to VAO binding point 0
             GL45.glVertexArrayVertexBuffer(vao, 0, newVbo, 0, stride);
             // Delete old VBO
-            if (vboCapacity > 0) GL45.glDeleteBuffers(vbo);
+            if (ts.vbo != 0) GL45.glDeleteBuffers(ts.vbo);
+            ts.vbo = newVbo;
             vbo = newVbo;
-            vboCapacity = newCapacity;
-            lastFormat = null; // force re-specify attribs for new buffer
+            ts.vboCapacity = newCapacity;
+            ts.lastFormat = null; // force re-specify attribs for new buffer
         }
         GL45.glNamedBufferSubData(vbo, 0, data);
 
         // Only re-specify vertex attribs when format changes
-        if (format != lastFormat) {
-            lastFormat = format;
+        if (format != ts.lastFormat) {
+            ts.lastFormat = format;
 
             // Bind VBO to VAO binding point 0 with current stride
             GL45.glVertexArrayVertexBuffer(vao, 0, vbo, 0, stride);
@@ -172,22 +195,34 @@ public final class CoreDrawHandler {
 
         // Draw — convert GL_QUADS to GL_TRIANGLES since quads are removed in core profile
         int drawMode = bufferBuilder.getDrawMode();
-        try {
-            if (drawMode == GL11.GL_QUADS) {
-                int quadCount = vertexCount / 4;
-                int indexCount = quadCount * 6;
+        if (drawMode == GL11.GL_QUADS) {
+            int quadCount = vertexCount / 4;
+            int indexCount = quadCount * 6;
 
-                int ebo = QuadIndexBuffer.ensure(quadCount);
-                GL45.glVertexArrayElementBuffer(vao, ebo);
+            int ebo = QuadIndexBuffer.ensure(quadCount);
+            GL45.glVertexArrayElementBuffer(vao, ebo);
 
-                GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
-            } else {
-                GL11.glDrawArrays(drawMode, 0, vertexCount);
-            }
-        } catch (Throwable t) {
-            com.github.gl46core.GL46Core.LOGGER.error("Exception during draw:", t);
+            GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
+        } else {
+            GL11.glDrawArrays(drawMode, 0, vertexCount);
         }
 
-        bufferBuilder.reset();
+        } catch (Throwable t) {
+            com.github.gl46core.GL46Core.LOGGER.error("[CoreDrawHandler] Exception during draw:", t);
+        } finally {
+            bufferBuilder.reset();
+        }
+    }
+
+    /**
+     * Destroy all thread-local GL objects. Called on shutdown.
+     */
+    public static void destroyAll() {
+        for (var entry : allStates.entrySet()) {
+            ThreadDrawState s = entry.getValue();
+            if (s.vao != 0) GL30.glDeleteVertexArrays(s.vao);
+            if (s.vbo != 0) GL45.glDeleteBuffers(s.vbo);
+        }
+        allStates.clear();
     }
 }

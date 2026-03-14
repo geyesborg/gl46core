@@ -93,7 +93,6 @@ unimined.minecraft {
             mixinRemap {
                 enableBaseMixin()
                 enableMixinExtra()
-                disableRefmap()
             }
         }
     } else {
@@ -101,7 +100,6 @@ unimined.minecraft {
             mixinRemap {
                 enableBaseMixin()
                 enableMixinExtra()
-                disableRefmap()
             }
         }
     }
@@ -227,6 +225,30 @@ remapJar {
     }
     doLast {
         logging.captureStandardOutput LogLevel.QUIET
+        // Strip Fabric-Loom-Mixin-Remap-Type from manifest — it causes Mixin to
+        // look for non-existent static remap data when disableRefmap() is used
+        def jarFile = archiveFile.get().asFile
+        def tempFile = new File(jarFile.parentFile, jarFile.name + '.tmp')
+        def zin = new java.util.zip.ZipInputStream(new java.io.FileInputStream(jarFile))
+        def zout = new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(tempFile))
+        def entry
+        while ((entry = zin.nextEntry) != null) {
+            if (entry.name == 'META-INF/MANIFEST.MF') {
+                def manifest = new java.util.jar.Manifest(zin)
+                manifest.mainAttributes.remove(new java.util.jar.Attributes.Name('Fabric-Loom-Mixin-Remap-Type'))
+                zout.putNextEntry(new java.util.zip.ZipEntry('META-INF/MANIFEST.MF'))
+                manifest.write(zout)
+                zout.closeEntry()
+            } else {
+                zout.putNextEntry(new java.util.zip.ZipEntry(entry.name))
+                zin.transferTo(zout)
+                zout.closeEntry()
+            }
+        }
+        zin.close()
+        zout.close()
+        jarFile.delete()
+        tempFile.renameTo(jarFile)
     }
 }
 

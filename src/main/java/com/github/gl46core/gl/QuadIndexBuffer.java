@@ -15,7 +15,6 @@ import java.nio.IntBuffer;
  */
 public final class QuadIndexBuffer {
 
-    private static int ebo = 0;
     private static int cachedMaxQuads = 0;
 
     private QuadIndexBuffer() {}
@@ -25,7 +24,9 @@ public final class QuadIndexBuffer {
      * Returns the EBO handle (bind with GL_ELEMENT_ARRAY_BUFFER).
      */
     public static int ensure(int neededQuads) {
-        if (neededQuads <= cachedMaxQuads) return ebo;
+        RenderContext ctx = RenderContext.get();
+        int ebo = ctx.handle(RenderContext.GL.QUAD_EBO);
+        if (neededQuads <= cachedMaxQuads && ebo != 0) return ebo;
 
         cachedMaxQuads = Math.max(neededQuads, 256);
         int maxIndexCount = cachedMaxQuads * 6;
@@ -42,13 +43,12 @@ public final class QuadIndexBuffer {
         GL45.glCreateBuffers(bufs);
         int newEbo = bufs[0];
         GL45.glNamedBufferStorage(newEbo, indices, 0);
-        if (ebo != 0) GL45.glDeleteBuffers(ebo);
-        ebo = newEbo;
+        ctx.replaceBuffer(RenderContext.GL.QUAD_EBO, newEbo);
 
-        return ebo;
+        return newEbo;
     }
 
     public static int getEbo() {
-        return ebo;
+        return RenderContext.get().handle(RenderContext.GL.QUAD_EBO);
     }
 }

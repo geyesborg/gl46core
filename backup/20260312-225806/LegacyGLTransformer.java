@@ -25,8 +25,7 @@ import java.util.Map;
  * - Material:      glMaterialfv, glMaterialf, glMateriali (no-ops)
  * - Texture:       glTexEnvi, glTexEnvf, glTexEnvfv, glActiveTexture, glMultiTexCoord2f,
  *                  glTexGeni, glTexGenfv, glTexGendv
- * - Tex upload:    glTexImage2D (ByteBuffer/IntBuffer), glTexSubImage2D (ByteBuffer/IntBuffer),
- *                  glGetTexImage (ByteBuffer/IntBuffer)
+ * - Tex upload:    glTexImage2D (ByteBuffer/IntBuffer), glTexSubImage2D (ByteBuffer/IntBuffer)
  * - Display lists: glCallList, glGenLists, glNewList, glEndList, glDeleteLists,
  *                  glListBase, glCallLists
  * - Attrib stack:  glPushAttrib, glPopAttrib
@@ -112,14 +111,6 @@ public class LegacyGLTransformer implements IClassTransformer {
         // ── Shader program (auto-upload matrix uniforms for mod shaders) ──
         table.put(new CallKey(GL20, "glUseProgram", "(I)V"),             new Redirect("glUseProgram"));
         table.put(new CallKey(GL20, "glDeleteProgram", "(I)V"),          new Redirect("glDeleteProgram"));
-
-        // ── Clear — simple passthrough ──────────────────────────────────
-        table.put(new CallKey(GL11, "glClear", "(I)V"),            new Redirect("glClear"));
-        table.put(new CallKey(GL11, "glClearColor", "(FFFF)V"),    new Redirect("glClearColor"));
-
-        // ── Core-profile clamped calls (avoid GL_INVALID_VALUE) ────
-        table.put(new CallKey(GL11, "glLineWidth", "(F)V"),        new Redirect("glLineWidth"));
-        table.put(new CallKey(GL11, "glPointSize", "(F)V"),        new Redirect("glPointSize"));
 
         // ── Core-profile state (tracked to prevent desync) ──────────
         table.put(new CallKey(GL11, "glDepthFunc", "(I)V"),        new Redirect("glDepthFunc"));
@@ -216,10 +207,6 @@ public class LegacyGLTransformer implements IClassTransformer {
         table.put(new CallKey(GL11, "glTexSubImage2D", "(IIIIIIII" + BB + ")V"), new Redirect("glTexSubImage2D"));
         table.put(new CallKey(GL11, "glTexSubImage2D", "(IIIIIIII" + IB + ")V"), new Redirect("glTexSubImage2D_IntBuffer", "(IIIIIIII" + IB + ")V"));
 
-        // ── Texture readback (convert deprecated formats for core profile) ──
-        table.put(new CallKey(GL11, "glGetTexImage", "(IIII" + IB + ")V"), new Redirect("glGetTexImage"));
-        table.put(new CallKey(GL11, "glGetTexImage", "(IIII" + BB + ")V"), new Redirect("glGetTexImage"));
-
         // ── Texture bind / delete (deferred deletion for core-profile safety) ──
         table.put(new CallKey(GL11, "glBindTexture", "(II)V"),     new Redirect("glBindTexture"));
         table.put(new CallKey(GL11, "glDeleteTextures", "(I)V"),   new Redirect("glDeleteTextures"));
@@ -277,9 +264,7 @@ public class LegacyGLTransformer implements IClassTransformer {
         String GL14C = "org/lwjgl/opengl/GL14C";
         String GL20C = "org/lwjgl/opengl/GL20C";
 
-        // GL11C — clear, enable/disable, state, queries, texture
-        table.put(new CallKey(GL11C, "glClear", "(I)V"),            new Redirect("glClear"));
-        table.put(new CallKey(GL11C, "glClearColor", "(FFFF)V"),    new Redirect("glClearColor"));
+        // GL11C — enable/disable, state, queries, texture
         table.put(new CallKey(GL11C, "glEnable", "(I)V"),           new Redirect("glEnable"));
         table.put(new CallKey(GL11C, "glDisable", "(I)V"),          new Redirect("glDisable"));
         table.put(new CallKey(GL11C, "glDepthFunc", "(I)V"),        new Redirect("glDepthFunc"));
@@ -297,8 +282,6 @@ public class LegacyGLTransformer implements IClassTransformer {
         table.put(new CallKey(GL11C, "glTexImage2D", "(IIIIIIII" + IB + ")V"), new Redirect("glTexImage2D_IntBuffer", "(IIIIIIII" + IB + ")V"));
         table.put(new CallKey(GL11C, "glTexSubImage2D", "(IIIIIIII" + BB + ")V"), new Redirect("glTexSubImage2D"));
         table.put(new CallKey(GL11C, "glTexSubImage2D", "(IIIIIIII" + IB + ")V"), new Redirect("glTexSubImage2D_IntBuffer", "(IIIIIIII" + IB + ")V"));
-        table.put(new CallKey(GL11C, "glGetTexImage", "(IIII" + IB + ")V"), new Redirect("glGetTexImage"));
-        table.put(new CallKey(GL11C, "glGetTexImage", "(IIII" + BB + ")V"), new Redirect("glGetTexImage"));
         table.put(new CallKey(GL11C, "glBindTexture", "(II)V"),     new Redirect("glBindTexture"));
         table.put(new CallKey(GL11C, "glDeleteTextures", "(I)V"),   new Redirect("glDeleteTextures"));
 

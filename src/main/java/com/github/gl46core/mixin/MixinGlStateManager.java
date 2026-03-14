@@ -228,15 +228,11 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason glGetFloat for matrix queries — read from CoreMatrixStack
+     * @reason Intercept removed state queries (matrices, fog, etc.) — read from CoreMatrixStack/CoreStateTracker
      */
     @Overwrite
     public static void getFloat(int pname, FloatBuffer params) {
-        if (CoreMatrixStack.INSTANCE.isMatrixQuery(pname)) {
-            CoreMatrixStack.INSTANCE.getFloat(pname, params);
-        } else {
-            GL11.glGetFloatv(pname, params);
-        }
+        com.github.gl46core.gl.LegacyGLRedirects.glGetFloatv(pname, params);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -456,7 +452,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void enableTexture2D() {
-        CoreStateTracker.INSTANCE.enableTexture2D(activeTextureUnit - GL13.GL_TEXTURE0);
+        CoreStateTracker.INSTANCE.enableTexture2D(gl46core$texUnit());
     }
 
     /**
@@ -465,7 +461,7 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static void disableTexture2D() {
-        CoreStateTracker.INSTANCE.disableTexture2D(activeTextureUnit - GL13.GL_TEXTURE0);
+        CoreStateTracker.INSTANCE.disableTexture2D(gl46core$texUnit());
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -473,14 +469,28 @@ public abstract class MixinGlStateManager {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
+     * Convert activeTextureUnit to a 0-based unit index.
+     * Cleanroom initializes activeTextureUnit to 0 (raw index),
+     * vanilla Forge uses GL_TEXTURE0 (33984). Handle both.
+     */
+    @Unique
+    private static int gl46core$texUnit() {
+        return activeTextureUnit >= GL13.GL_TEXTURE0
+                ? activeTextureUnit - GL13.GL_TEXTURE0
+                : activeTextureUnit;
+    }
+
+    /**
      * @author GL46Core
-     * @reason Pass through to real GL and track active unit
+     * @reason Pass through to real GL and track active unit; handle both raw and GL_TEXTUREx values
      */
     @Overwrite
     public static void setActiveTexture(int texture) {
         activeTextureUnit = texture;
-        CoreStateTracker.INSTANCE.setActiveTextureUnit(texture - GL13.GL_TEXTURE0);
-        GL13.glActiveTexture(texture);
+        int unit = texture >= GL13.GL_TEXTURE0 ? texture - GL13.GL_TEXTURE0 : texture;
+        CoreStateTracker.INSTANCE.setActiveTextureUnit(unit);
+        // Ensure real GL gets the GL_TEXTUREx enum value
+        GL13.glActiveTexture(texture >= GL13.GL_TEXTURE0 ? texture : texture + GL13.GL_TEXTURE0);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -568,147 +578,147 @@ public abstract class MixinGlStateManager {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Core-profile pass-through methods (still exist in core)
+    // Core-profile state — tracked + dirty-flagged in CoreStateTracker
     // ═══════════════════════════════════════════════════════════════════
 
     /**
      * @author GL46Core
-     * @reason Pass through — depth test still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void enableDepth() {
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        CoreStateTracker.INSTANCE.enableDepthTest(true);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — depth test still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void disableDepth() {
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        CoreStateTracker.INSTANCE.enableDepthTest(false);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — depth func still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void depthFunc(int func) {
-        GL11.glDepthFunc(func);
+        CoreStateTracker.INSTANCE.depthFunc(func);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — depth mask still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void depthMask(boolean flag) {
-        GL11.glDepthMask(flag);
+        CoreStateTracker.INSTANCE.depthMask(flag);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — blend still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void enableBlend() {
-        GL11.glEnable(GL11.GL_BLEND);
+        CoreStateTracker.INSTANCE.enableBlend(true);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — blend still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void disableBlend() {
-        GL11.glDisable(GL11.GL_BLEND);
+        CoreStateTracker.INSTANCE.enableBlend(false);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — blendFunc still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void blendFunc(int sfactor, int dfactor) {
-        GL11.glBlendFunc(sfactor, dfactor);
+        CoreStateTracker.INSTANCE.blendFunc(sfactor, dfactor);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — blendFuncSeparate still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void tryBlendFuncSeparate(int srcFactor, int dstFactor, int srcFactorAlpha, int dstFactorAlpha) {
-        GL14.glBlendFuncSeparate(srcFactor, dstFactor, srcFactorAlpha, dstFactorAlpha);
+        CoreStateTracker.INSTANCE.blendFuncSeparate(srcFactor, dstFactor, srcFactorAlpha, dstFactorAlpha);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — cull face still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void enableCull() {
-        GL11.glEnable(GL11.GL_CULL_FACE);
+        CoreStateTracker.INSTANCE.enableCull(true);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — cull face still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void disableCull() {
-        GL11.glDisable(GL11.GL_CULL_FACE);
+        CoreStateTracker.INSTANCE.enableCull(false);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — cull face mode still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void cullFace(int mode) {
-        GL11.glCullFace(mode);
+        CoreStateTracker.INSTANCE.cullFace(mode);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — polygon offset still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void enablePolygonOffset() {
-        GL11.glEnable(0x8037); // GL_POLYGON_OFFSET_FILL
+        CoreStateTracker.INSTANCE.enablePolygonOffset(true);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — polygon offset still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void disablePolygonOffset() {
-        GL11.glDisable(0x8037); // GL_POLYGON_OFFSET_FILL
+        CoreStateTracker.INSTANCE.enablePolygonOffset(false);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — polygon offset still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void doPolygonOffset(float factor, float units) {
-        GL11.glPolygonOffset(factor, units);
+        CoreStateTracker.INSTANCE.polygonOffset(factor, units);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — color mask still exists in core profile
+     * @reason Tracked + dirty-flagged — skips redundant GL calls
      */
     @Overwrite
     public static void colorMask(boolean r, boolean g, boolean b, boolean a) {
-        GL11.glColorMask(r, g, b, a);
+        CoreStateTracker.INSTANCE.colorMask(r, g, b, a);
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — clear color still exists in core profile
+     * @reason Core-profile — direct GL (not worth tracking)
      */
     @Overwrite
     public static void clearColor(float r, float g, float b, float a) {
@@ -717,17 +727,18 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason Pass through — clear still exists in core profile
+     * @reason Core-profile — direct GL (always executes)
      */
     @Overwrite
     public static void clear(int mask) {
         CoreShaderProgram.endFrame();
         GL11.glClear(mask);
+        com.github.gl46core.GL46Core.onFrameTick();
     }
 
     /**
      * @author GL46Core
-     * @reason Pass through — viewport still exists in core profile
+     * @reason Core-profile — direct GL (not worth tracking)
      */
     @Overwrite
     public static void viewport(int x, int y, int width, int height) {
@@ -746,11 +757,12 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason glLineWidth still exists in core profile
+     * @reason Core-profile — direct GL (rarely called)
      */
     @Overwrite
     public static void glLineWidth(float width) {
-        GL11.glLineWidth(width);
+        // Core profile only supports line width 1.0 — clamp to avoid GL_INVALID_VALUE
+        GL11.glLineWidth(1.0f);
     }
 
     /**
@@ -830,20 +842,20 @@ public abstract class MixinGlStateManager {
 
     /**
      * @author GL46Core
-     * @reason glTexSubImage2D still exists — pass through
+     * @reason Convert deprecated GL_ALPHA/GL_LUMINANCE formats for core profile
      */
     @Overwrite
     public static void glTexSubImage2D(int target, int level, int xOffset, int yOffset, int width, int height, int format, int type, java.nio.IntBuffer pixels) {
-        GL11.glTexSubImage2D(target, level, xOffset, yOffset, width, height, format, type, pixels);
+        com.github.gl46core.gl.LegacyGLRedirects.glTexSubImage2D_IntBuffer(target, level, xOffset, yOffset, width, height, format, type, pixels);
     }
 
     /**
      * @author GL46Core
-     * @reason glGetTexImage still exists — pass through
+     * @reason Convert deprecated GL_ALPHA/GL_LUMINANCE formats for core profile
      */
     @Overwrite
     public static void glGetTexImage(int target, int level, int format, int type, java.nio.IntBuffer pixels) {
-        GL11.glGetTexImage(target, level, format, type, pixels);
+        com.github.gl46core.gl.LegacyGLRedirects.glGetTexImage(target, level, format, type, pixels);
     }
 
     /**
@@ -864,7 +876,8 @@ public abstract class MixinGlStateManager {
      */
     @Overwrite
     public static int generateTexture() {
-        return GL11.glGenTextures();
+        int id = GL11.glGenTextures();
+        return id;
     }
 
     // ═══════════════════════════════════════════════════════════════════

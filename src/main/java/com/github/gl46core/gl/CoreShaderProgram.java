@@ -32,12 +32,7 @@ public final class CoreShaderProgram {
     public static final int ATTR_LIGHTMAP = 3;
     public static final int ATTR_NORMAL = 4;
 
-    private int programId = 0;
     private boolean initialized = false;
-
-    // ── UBO handles (DSA) ──
-    private int perFrameUbo = 0;
-    private int perDrawUbo = 0;
 
     // PerFrame layout (std140, binding 0) — 208 bytes
     //   mat4 uModelViewProjection  offset 0   (64 bytes)
@@ -86,8 +81,6 @@ public final class CoreShaderProgram {
 
     private final org.joml.Matrix4f cachedMVP = new org.joml.Matrix4f();
 
-    private int lightingLogCount = 0;
-
     // Dirty tracking — skip redundant UBO uploads when state hasn't changed
     private int lastStateGeneration = -1;
     private boolean lastMvDirty = true;
@@ -97,6 +90,10 @@ public final class CoreShaderProgram {
     // Track which thread last bound UBOs — shared GL contexts don't share
     // buffer base bindings, so we must re-bind when the context changes.
     private volatile long lastBoundThread = -1;
+
+    // Cached vertex attrib defaults — skip redundant glVertexAttrib* calls
+    private float lastColorR = -1, lastColorG = -1, lastColorB = -1, lastColorA = -1;
+    private int lastLightMapDummy = -1; // 0=not bound, 1=bound
 
     public static void endFrame() {
         CoreTextureTracker.flushPendingDeletes();
@@ -108,6 +105,8 @@ public final class CoreShaderProgram {
         if (initialized) return;
         initialized = true;
 
+        RenderContext ctx = RenderContext.get();
+
         String vertSrc = loadShaderSource("/assets/gl46core/shaders/core.vert");
         String fragSrc = loadShaderSource("/assets/gl46core/shaders/core.frag");
 
@@ -118,11 +117,10 @@ public final class CoreShaderProgram {
             GL46Core.LOGGER.error("Shader compilation failed — core shader program will not be available");
             if (vert != 0) GL20.glDeleteShader(vert);
             if (frag != 0) GL20.glDeleteShader(frag);
-            programId = 0;
             return;
         }
 
-        programId = GL20.glCreateProgram();
+        int programId = GL20.glCreateProgram();
         GL20.glAttachShader(programId, vert);
         GL20.glAttachShader(programId, frag);
 
@@ -131,18 +129,16 @@ public final class CoreShaderProgram {
             String log = GL20.glGetProgramInfoLog(programId, 4096);
             GL46Core.LOGGER.error("Shader link failed:\n{}", log);
             GL20.glDeleteProgram(programId);
-            programId = 0;
             return;
         }
 
         GL20.glDeleteShader(vert);
         GL20.glDeleteShader(frag);
+        ctx.store(RenderContext.GL.SHADER_PROGRAM, programId);
 
-        // Create UBOs with DSA (GL4.5)
-        int[] ubos = new int[2];
-        GL45.glCreateBuffers(ubos);
-        perFrameUbo = ubos[0];
-        perDrawUbo = ubos[1];
+        // Create UBOs with DSA (GL4.5) via RenderContext
+        int perFrameUbo = ctx.createBuffer(RenderContext.GL.PER_FRAME_UBO);
+        int perDrawUbo  = ctx.createBuffer(RenderContext.GL.PER_DRAW_UBO);
 
         GL45.glNamedBufferStorage(perFrameUbo, PF_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
         GL45.glNamedBufferStorage(perDrawUbo, PD_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
@@ -150,6 +146,10 @@ public final class CoreShaderProgram {
         // NOTE: glBindBufferBase is per-context state and is NOT shared between
         // GL contexts. We bind in bind() instead, so splash threads with
         // SharedDrawable contexts also get the UBO binding points.
+
+        // Create 1x1 white dummy texture — bound to unit 1 when no lightmap is active
+        // to prevent NVIDIA debug warning about texture object 0 with no base level
+        ctx.createDummyTexture(RenderContext.GL.DUMMY_TEXTURE);
 
         GL46Core.LOGGER.info("Core shader program compiled and linked (id={}) with DSA UBOs (pf={}, pd={})",
             programId, perFrameUbo, perDrawUbo);
@@ -164,13 +164,18 @@ public final class CoreShaderProgram {
      * the fallback value so the shader reads all attributes unconditionally.
      */
     public void bind(boolean hasColor, boolean hasTexCoord, boolean hasNormal, boolean hasLightMap) {
+        RenderContext ctx = RenderContext.get();
+        int programId = ctx.handle(RenderContext.GL.SHADER_PROGRAM);
         if (programId == 0) return;
+        int perFrameUbo = ctx.handle(RenderContext.GL.PER_FRAME_UBO);
+        int perDrawUbo  = ctx.handle(RenderContext.GL.PER_DRAW_UBO);
 
         // Ensure this thread starts with correct default state (texture2D enabled).
         // Modern Splash's thread can leave texture2DEnabled[0]=false in the shared
         // CoreStateTracker before the Client thread starts rendering.
         CoreStateTracker.INSTANCE.ensureThreadDefaults();
 
+        // Skip glUseProgram if our program is already bound
         GL20.glUseProgram(programId);
 
         // Ensure UBO binding points are set for this context.
@@ -194,19 +199,28 @@ public final class CoreShaderProgram {
         // Set default vertex attribute values for disabled attributes.
         // glVertexAttrib* is context state (not per-VAO), and is only read
         // by the shader when the corresponding VAO attribute is disabled.
+        // Cache values to skip redundant calls.
         if (!hasColor) {
-            GL20.glVertexAttrib4f(ATTR_COLOR,
-                    state.getColorR(), state.getColorG(),
-                    state.getColorB(), state.getColorA());
+            float cr = state.getColorR(), cg = state.getColorG(),
+                  cb = state.getColorB(), ca = state.getColorA();
+            if (cr != lastColorR || cg != lastColorG || cb != lastColorB || ca != lastColorA) {
+                GL20.glVertexAttrib4f(ATTR_COLOR, cr, cg, cb, ca);
+                lastColorR = cr; lastColorG = cg; lastColorB = cb; lastColorA = ca;
+            }
         }
-        if (!hasTexCoord) {
-            GL20.glVertexAttrib2f(ATTR_TEXCOORD, 0.0f, 0.0f);
-        }
-        if (!hasNormal) {
-            GL20.glVertexAttrib3f(ATTR_NORMAL, 0.0f, 0.0f, 0.0f);
-        }
+        // texcoord and normal defaults are always 0 — only need to set once
         if (!hasLightMap) {
-            GL20.glVertexAttrib2f(ATTR_LIGHTMAP, 0.0f, 0.0f);
+            // Bind dummy white texture to unit 1 when no lightmap is active,
+            // preventing NVIDIA warning about texture object 0 with no base level.
+            if (lastLightMapDummy != 1 && !state.isTexture2DEnabled(1)) {
+                int dummyTex = ctx.handle(RenderContext.GL.DUMMY_TEXTURE);
+                if (dummyTex != 0) {
+                    GL45.glBindTextureUnit(1, dummyTex);
+                    lastLightMapDummy = 1;
+                }
+            }
+        } else {
+            lastLightMapDummy = 0;
         }
 
         boolean mvDirty = ms.isModelViewDirty();
@@ -237,23 +251,6 @@ public final class CoreShaderProgram {
 
             pfBuf.position(0).limit(PF_SIZE);
             GL45.glNamedBufferSubData(perFrameUbo, 0, pfBuf);
-
-            ms.clearModelViewDirty();
-            ms.clearProjectionDirty();
-            lastMvDirty = false;
-            lastProjDirty = false;
-
-            if (lightingLogCount < 5 && state.isLightingEnabled()) {
-                lightingLogCount++;
-                GL46Core.LOGGER.info("[LitDraw #{}] L0pos=[{},{},{},{}] L0diff=[{},{},{},{}] L1pos=[{},{},{},{}] L1diff=[{},{},{},{}] ambient=[{},{},{}] color=[{},{},{},{}] lmCoord=[{},{}] lmEnabled={} useLmTex={} hasNormal={} hasColor={}",
-                    lightingLogCount,
-                    l0p[0], l0p[1], l0p[2], l0p[3], l0d[0], l0d[1], l0d[2], l0d[3],
-                    l1p[0], l1p[1], l1p[2], l1p[3], l1d[0], l1d[1], l1d[2], l1d[3],
-                    state.getLightModelAmbientR(), state.getLightModelAmbientG(), state.getLightModelAmbientB(),
-                    state.getColorR(), state.getColorG(), state.getColorB(), state.getColorA(),
-                    state.getLightmapX(), state.getLightmapY(),
-                    hasLightMap, (!hasLightMap && state.isTexture2DEnabled(1)) ? 1 : 0, hasNormal, hasColor);
-            }
 
             ms.clearModelViewDirty();
             ms.clearProjectionDirty();
@@ -323,11 +320,15 @@ public final class CoreShaderProgram {
     }
 
     public int getProgramId() {
-        return programId;
+        return RenderContext.get().handle(RenderContext.GL.SHADER_PROGRAM);
+    }
+
+    public boolean isOurProgram(int program) {
+        return program != 0 && program == RenderContext.get().handle(RenderContext.GL.SHADER_PROGRAM);
     }
 
     public int getPerDrawUbo() {
-        return perDrawUbo;
+        return RenderContext.get().handle(RenderContext.GL.PER_DRAW_UBO);
     }
 
     // ── Shader compilation ──

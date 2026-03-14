@@ -7,8 +7,7 @@ import org.spongepowered.asm.mixin.Overwrite;
 
 /**
  * Hooks processWindowMessages to render splash frames on every progress update.
- * This is called by ProgressManager.push(), pop(), and ProgressBar.step(),
- * giving us smooth splash screen updates during loading.
+ * Skipped when Modern Splash is present (see GL46CoreMixinPlugin).
  */
 @Mixin(value = FMLClientHandler.class, remap = false)
 public class MixinFMLClientHandler {

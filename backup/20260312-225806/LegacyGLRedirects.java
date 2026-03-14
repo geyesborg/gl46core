@@ -202,9 +202,7 @@ public final class LegacyGLRedirects {
             case 0x0B44 -> st.enableCull(true);                                    // GL_CULL_FACE
             case 0x8037 -> st.enablePolygonOffset(true);                           // GL_POLYGON_OFFSET_FILL
             // Untracked core state — direct GL
-            default -> {
-                org.lwjgl.opengl.GL11.glEnable(cap);
-            }
+            default -> org.lwjgl.opengl.GL11.glEnable(cap);
         }
     }
 
@@ -233,24 +231,8 @@ public final class LegacyGLRedirects {
             case 0x0B44 -> st.enableCull(false);
             case 0x8037 -> st.enablePolygonOffset(false);
             // Untracked core state — direct GL
-            default -> {
-                org.lwjgl.opengl.GL11.glDisable(cap);
-            }
+            default -> org.lwjgl.opengl.GL11.glDisable(cap);
         }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Core-profile clamped calls — avoid GL_INVALID_VALUE
-    // ═══════════════════════════════════════════════════════════════════
-
-    public static void glLineWidth(float width) {
-        // Core profile only guarantees line width 1.0 — clamp to avoid GL_INVALID_VALUE
-        org.lwjgl.opengl.GL11.glLineWidth(1.0f);
-    }
-
-    public static void glPointSize(float size) {
-        // Core profile may have restricted point size range — clamp to 1.0
-        org.lwjgl.opengl.GL11.glPointSize(1.0f);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -284,18 +266,6 @@ public final class LegacyGLRedirects {
 
     public static void glColorMask(boolean r, boolean g, boolean b, boolean a) {
         CoreStateTracker.INSTANCE.colorMask(r, g, b, a);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Clear — simple passthrough
-    // ═══════════════════════════════════════════════════════════════════
-
-    public static void glClearColor(float r, float g, float b, float a) {
-        org.lwjgl.opengl.GL11.glClearColor(r, g, b, a);
-    }
-
-    public static void glClear(int mask) {
-        org.lwjgl.opengl.GL11.glClear(mask);
     }
 
     // ═══════════════════════════════════════════════════════════════════

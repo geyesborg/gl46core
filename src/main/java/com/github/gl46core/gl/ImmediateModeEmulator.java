@@ -46,7 +46,7 @@ public final class ImmediateModeEmulator {
     // VAOs are per-context (NOT shared between GL contexts), so each thread
     // that has its own context (e.g. Modern Splash's SharedDrawable) needs its own VAO.
     // VBOs ARE shared, but we use per-thread VBOs too for simplicity.
-    private static final ThreadLocal<int[]> threadVaoVbo = ThreadLocal.withInitial(() -> new int[]{0, 0});
+    // Thread-local handles are owned by RenderContext.
 
     private ImmediateModeEmulator() {
         buffer = ByteBuffer.allocateDirect(MAX_VERTICES * VERTEX_SIZE)
@@ -111,61 +111,55 @@ public final class ImmediateModeEmulator {
         }
         drawing = false;
 
-        CoreShaderProgram.INSTANCE.ensureInitialized();
+        try {
+            CoreShaderProgram.INSTANCE.ensureInitialized();
 
-        int[] ids = threadVaoVbo.get();
-        if (ids[0] == 0) {
-            int[] vaos = new int[1];
-            GL45.glCreateVertexArrays(vaos);
-            ids[0] = vaos[0];
+            int[] ids = RenderContext.get().threadLocalVaoVbo();
+
+            GL30.glBindVertexArray(ids[0]);
+            CoreVboDrawHandler.setTerrainVaoUnbound();
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, ids[1]);
+
+            // GL_QUADS is removed in core profile — convert to GL_TRIANGLES
+            int actualMode = drawMode;
+            int actualCount = vertexCount;
+            if (drawMode == GL11.GL_QUADS) {
+                expandQuadsToTriangles();
+                actualMode = GL11.GL_TRIANGLES;
+                actualCount = (vertexCount / 4) * 6;
+            }
+
+            buffer.flip();
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, buffer, GL15.GL_STREAM_DRAW);
+
+            // Position — vec3 float at offset 0
+            GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_POSITION);
+            GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_POSITION, 3, GL11.GL_FLOAT, false, VERTEX_SIZE, 0);
+
+            // Color — vec4 ubyte normalized at offset 12
+            GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_COLOR);
+            GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_COLOR, 4, GL11.GL_UNSIGNED_BYTE, true, VERTEX_SIZE, 12);
+
+            // Texcoord — vec2 float at offset 16
+            GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_TEXCOORD);
+            GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_TEXCOORD, 2, GL11.GL_FLOAT, false, VERTEX_SIZE, 16);
+
+            // Normal — vec3 float at offset 24
+            GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_NORMAL);
+            GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_NORMAL, 3, GL11.GL_FLOAT, false, VERTEX_SIZE, 24);
+
+            // No lightmap in immediate mode
+            GL20.glDisableVertexAttribArray(CoreShaderProgram.ATTR_LIGHTMAP);
+
+            // Bind shader — always has color and texcoord from immediate mode state
+            CoreShaderProgram.INSTANCE.bind(true, true, true, false);
+
+            GL11.glDrawArrays(actualMode, 0, actualCount);
+
+            // Don't unbind shader or VAO/VBO — dirty tracking handles re-use
+        } catch (Throwable t) {
+            com.github.gl46core.GL46Core.LOGGER.error("[ImmediateModeEmulator] Exception in end():", t);
         }
-        if (ids[1] == 0) {
-            int[] bufs = new int[1];
-            GL45.glCreateBuffers(bufs);
-            ids[1] = bufs[0];
-        }
-
-        GL30.glBindVertexArray(ids[0]);
-        CoreVboDrawHandler.setTerrainVaoUnbound();
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, ids[1]);
-
-        // GL_QUADS is removed in core profile — convert to GL_TRIANGLES
-        int actualMode = drawMode;
-        int actualCount = vertexCount;
-        if (drawMode == GL11.GL_QUADS) {
-            expandQuadsToTriangles();
-            actualMode = GL11.GL_TRIANGLES;
-            actualCount = (vertexCount / 4) * 6;
-        }
-
-        buffer.flip();
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, buffer, GL15.GL_STREAM_DRAW);
-
-        // Position — vec3 float at offset 0
-        GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_POSITION);
-        GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_POSITION, 3, GL11.GL_FLOAT, false, VERTEX_SIZE, 0);
-
-        // Color — vec4 ubyte normalized at offset 12
-        GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_COLOR);
-        GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_COLOR, 4, GL11.GL_UNSIGNED_BYTE, true, VERTEX_SIZE, 12);
-
-        // Texcoord — vec2 float at offset 16
-        GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_TEXCOORD);
-        GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_TEXCOORD, 2, GL11.GL_FLOAT, false, VERTEX_SIZE, 16);
-
-        // Normal — vec3 float at offset 24
-        GL20.glEnableVertexAttribArray(CoreShaderProgram.ATTR_NORMAL);
-        GL20.glVertexAttribPointer(CoreShaderProgram.ATTR_NORMAL, 3, GL11.GL_FLOAT, false, VERTEX_SIZE, 24);
-
-        // No lightmap in immediate mode
-        GL20.glDisableVertexAttribArray(CoreShaderProgram.ATTR_LIGHTMAP);
-
-        // Bind shader — always has color and texcoord from immediate mode state
-        CoreShaderProgram.INSTANCE.bind(true, true, true, false);
-
-        GL11.glDrawArrays(actualMode, 0, actualCount);
-
-        // Don't unbind shader or VAO/VBO — dirty tracking handles re-use
     }
 
     /**

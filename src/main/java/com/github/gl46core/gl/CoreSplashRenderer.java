@@ -378,10 +378,10 @@ public final class CoreSplashRenderer {
 
     private static void initSplashGL() {
         String vertSrc = """
-                #version 150 core
-                in vec2 aPos;
-                in vec2 aTex;
-                in vec4 aCol;
+                #version 460 core
+                layout(location = 0) in vec2 aPos;
+                layout(location = 1) in vec2 aTex;
+                layout(location = 2) in vec4 aCol;
                 uniform mat4 uMVP;
                 out vec2 vTex;
                 out vec4 vCol;
@@ -393,7 +393,7 @@ public final class CoreSplashRenderer {
                 """;
 
         String fragSrc = """
-                #version 150 core
+                #version 460 core
                 in vec2 vTex;
                 in vec4 vCol;
                 uniform sampler2D uTexture;

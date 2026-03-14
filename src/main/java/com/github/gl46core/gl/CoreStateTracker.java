@@ -1,12 +1,16 @@
 package com.github.gl46core.gl;
 
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL14;
+
 /**
- * Tracks legacy fixed-function GL state that has been removed in core profile.
- * Instead of calling glEnable(GL_ALPHA_TEST) etc., we store the state here
- * and make it available as uniform data for shaders that need to emulate
- * the fixed-function behaviour.
+ * Tracks ALL GL state used by gl46core — both removed fixed-function state
+ * (alpha test, fog, lighting, etc.) and core-profile state (depth, blend,
+ * cull, polygon offset, color mask).
  *
- * This class does NOT issue any GL calls — it is purely a software state tracker.
+ * <p>Removed state is purely software-tracked and uploaded via UBOs.
+ * Core state issues real GL calls but skips redundant ones via dirty-flagging,
+ * and is saved/restored by pushAttrib/popAttrib.</p>
  */
 public final class CoreStateTracker {
 
@@ -18,6 +22,7 @@ public final class CoreStateTracker {
     private int attribStackPointer = 0;
 
     private static class AttribSnapshot {
+        // Removed state (software-only)
         boolean alphaTestEnabled;
         int alphaFunc;
         float alphaRef;
@@ -37,6 +42,17 @@ public final class CoreStateTracker {
         int[] texGenMode = new int[4];
         boolean[] clipPlaneEnabled = new boolean[6];
         float[][] clipPlaneEquation = new float[6][4];
+        // Core state (tracked + real GL)
+        boolean depthTestEnabled;
+        int depthFunc;
+        boolean depthMask;
+        boolean blendEnabled;
+        int blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha;
+        boolean cullEnabled;
+        int cullFaceMode;
+        boolean polygonOffsetEnabled;
+        float polygonOffsetFactor, polygonOffsetUnits;
+        boolean colorMaskR, colorMaskG, colorMaskB, colorMaskA;
     }
 
     // Generation counter — increments on every state mutation.
@@ -51,21 +67,52 @@ public final class CoreStateTracker {
     private CoreStateTracker() {
         attribStack = new AttribSnapshot[ATTRIB_STACK_DEPTH];
         for (int i = 0; i < ATTRIB_STACK_DEPTH; i++) attribStack[i] = new AttribSnapshot();
-        // Default: texture unit 0 enabled
-        texture2DEnabled[0] = true;
     }
 
     /**
-     * Called before each draw to ensure the current thread starts with
-     * correct default state. Needed because Modern Splash's thread can
-     * leave texture2DEnabled[0]=false in this shared singleton before
-     * the Client thread starts rendering.
+     * Called before each draw to ensure the current thread's GL context
+     * matches what our ThreadLocal dirty-flags think it is.
+     *
+     * When a thread first acquires a GL context (e.g. Modern Splash's
+     * Thread-1 taking the main context via Display.getDrawable().makeCurrent()),
+     * the real GL state may differ from our ThreadCoreState defaults because
+     * the previous owner (Client thread) modified it. Without force-syncing,
+     * our dirty-flag optimization would skip GL calls that the new thread
+     * issues (e.g. glDisable(GL_DEPTH_TEST) is skipped because our default
+     * already says "disabled", but the real context has it enabled).
      */
     public void ensureThreadDefaults() {
         long tid = Thread.currentThread().getId();
         if (initializedThreads.putIfAbsent(tid, Boolean.TRUE) == null) {
-            // First draw on this thread — reset to OpenGL defaults
-            texture2DEnabled[0] = true;
+            // First draw on this thread — force-sync real GL state to match
+            // our ThreadCoreState defaults so dirty-flagging works correctly.
+            ThreadCoreState cs = coreState();
+
+            // Depth
+            if (cs.depthTestEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
+            else GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDepthFunc(cs.depthFunc);
+            GL11.glDepthMask(cs.depthMask);
+
+            // Blend
+            if (cs.blendEnabled) GL11.glEnable(GL11.GL_BLEND);
+            else GL11.glDisable(GL11.GL_BLEND);
+            GL14.glBlendFuncSeparate(cs.blendSrcRGB, cs.blendDstRGB,
+                    cs.blendSrcAlpha, cs.blendDstAlpha);
+
+            // Cull face
+            if (cs.cullEnabled) GL11.glEnable(GL11.GL_CULL_FACE);
+            else GL11.glDisable(GL11.GL_CULL_FACE);
+            GL11.glCullFace(cs.cullFaceMode);
+
+            // Polygon offset
+            if (cs.polygonOffsetEnabled) GL11.glEnable(0x8037); // GL_POLYGON_OFFSET_FILL
+            else GL11.glDisable(0x8037);
+            GL11.glPolygonOffset(cs.polygonOffsetFactor, cs.polygonOffsetUnits);
+
+            // Color mask
+            GL11.glColorMask(cs.colorMaskR, cs.colorMaskG, cs.colorMaskB, cs.colorMaskA);
+
             generation++;
         }
     }
@@ -73,6 +120,7 @@ public final class CoreStateTracker {
     public void pushAttrib() {
         if (attribStackPointer >= ATTRIB_STACK_DEPTH) return;
         AttribSnapshot s = attribStack[attribStackPointer];
+        // Removed state
         s.alphaTestEnabled = alphaTestEnabled;
         s.alphaFunc = alphaFunc;
         s.alphaRef = alphaRef;
@@ -84,8 +132,10 @@ public final class CoreStateTracker {
         s.fogStart = fogStart;
         s.fogEnd = fogEnd;
         s.fogR = fogR; s.fogG = fogG; s.fogB = fogB; s.fogA = fogA;
-        s.colorR = colorR; s.colorG = colorG; s.colorB = colorB; s.colorA = colorA;
-        System.arraycopy(texture2DEnabled, 0, s.texture2DEnabled, 0, 8);
+        // Thread-local removed state (color + texture2D)
+        ThreadCoreState cs = coreState();
+        s.colorR = cs.colorR; s.colorG = cs.colorG; s.colorB = cs.colorB; s.colorA = cs.colorA;
+        System.arraycopy(cs.texture2DEnabled, 0, s.texture2DEnabled, 0, 8);
         s.normalizeEnabled = normalizeEnabled;
         s.rescaleNormalEnabled = rescaleNormalEnabled;
         s.colorMaterialEnabled = colorMaterialEnabled;
@@ -95,12 +145,26 @@ public final class CoreStateTracker {
         System.arraycopy(texGenMode, 0, s.texGenMode, 0, 4);
         System.arraycopy(clipPlaneEnabled, 0, s.clipPlaneEnabled, 0, 6);
         for (int i = 0; i < 6; i++) System.arraycopy(clipPlaneEquation[i], 0, s.clipPlaneEquation[i], 0, 4);
+        // Core state (from this thread's GL context)
+        s.depthTestEnabled = cs.depthTestEnabled;
+        s.depthFunc = cs.depthFunc;
+        s.depthMask = cs.depthMask;
+        s.blendEnabled = cs.blendEnabled;
+        s.blendSrcRGB = cs.blendSrcRGB; s.blendDstRGB = cs.blendDstRGB;
+        s.blendSrcAlpha = cs.blendSrcAlpha; s.blendDstAlpha = cs.blendDstAlpha;
+        s.cullEnabled = cs.cullEnabled;
+        s.cullFaceMode = cs.cullFaceMode;
+        s.polygonOffsetEnabled = cs.polygonOffsetEnabled;
+        s.polygonOffsetFactor = cs.polygonOffsetFactor; s.polygonOffsetUnits = cs.polygonOffsetUnits;
+        s.colorMaskR = cs.colorMaskR; s.colorMaskG = cs.colorMaskG;
+        s.colorMaskB = cs.colorMaskB; s.colorMaskA = cs.colorMaskA;
         attribStack[attribStackPointer++] = s;
     }
 
     public void popAttrib() {
         if (attribStackPointer <= 0) return;
         AttribSnapshot s = attribStack[--attribStackPointer];
+        // Removed state
         alphaTestEnabled = s.alphaTestEnabled;
         alphaFunc = s.alphaFunc;
         alphaRef = s.alphaRef;
@@ -112,8 +176,9 @@ public final class CoreStateTracker {
         fogStart = s.fogStart;
         fogEnd = s.fogEnd;
         fogR = s.fogR; fogG = s.fogG; fogB = s.fogB; fogA = s.fogA;
-        colorR = s.colorR; colorG = s.colorG; colorB = s.colorB; colorA = s.colorA;
-        System.arraycopy(s.texture2DEnabled, 0, texture2DEnabled, 0, 8);
+        ThreadCoreState cs0 = coreState();
+        cs0.colorR = s.colorR; cs0.colorG = s.colorG; cs0.colorB = s.colorB; cs0.colorA = s.colorA;
+        System.arraycopy(s.texture2DEnabled, 0, cs0.texture2DEnabled, 0, 8);
         normalizeEnabled = s.normalizeEnabled;
         rescaleNormalEnabled = s.rescaleNormalEnabled;
         colorMaterialEnabled = s.colorMaterialEnabled;
@@ -123,6 +188,29 @@ public final class CoreStateTracker {
         System.arraycopy(s.texGenMode, 0, texGenMode, 0, 4);
         System.arraycopy(s.clipPlaneEnabled, 0, clipPlaneEnabled, 0, 6);
         for (int i = 0; i < 6; i++) System.arraycopy(s.clipPlaneEquation[i], 0, clipPlaneEquation[i], 0, 4);
+        // Core state — restore with real GL calls (on this thread's context)
+        // Force-set by resetting cached state first, ensuring GL calls are issued
+        ThreadCoreState cs = coreState();
+        cs.depthTestEnabled = !s.depthTestEnabled; // force mismatch
+        enableDepthTest(s.depthTestEnabled);
+        cs.depthFunc = ~s.depthFunc;
+        depthFunc(s.depthFunc);
+        cs.depthMask = !s.depthMask;
+        depthMask(s.depthMask);
+        cs.blendEnabled = !s.blendEnabled;
+        enableBlend(s.blendEnabled);
+        cs.blendSrcRGB = ~s.blendSrcRGB;
+        blendFuncSeparate(s.blendSrcRGB, s.blendDstRGB, s.blendSrcAlpha, s.blendDstAlpha);
+        cs.cullEnabled = !s.cullEnabled;
+        enableCull(s.cullEnabled);
+        cs.cullFaceMode = ~s.cullFaceMode;
+        cullFace(s.cullFaceMode);
+        cs.polygonOffsetEnabled = !s.polygonOffsetEnabled;
+        enablePolygonOffset(s.polygonOffsetEnabled);
+        cs.polygonOffsetFactor = s.polygonOffsetFactor + 1; // force mismatch
+        polygonOffset(s.polygonOffsetFactor, s.polygonOffsetUnits);
+        cs.colorMaskR = !s.colorMaskR;
+        colorMask(s.colorMaskR, s.colorMaskG, s.colorMaskB, s.colorMaskA);
         generation++;
     }
 
@@ -152,11 +240,10 @@ public final class CoreStateTracker {
     private float fogEnd = 1.0f;
     private float fogR, fogG, fogB, fogA;
 
-    // ── Color (glColor4f) ───────────────────────────────────────────────
-    private float colorR = 1.0f, colorG = 1.0f, colorB = 1.0f, colorA = 1.0f;
-
-    // ── Texture 2D enable/disable (per texture unit) ────────────────────
-    private final boolean[] texture2DEnabled = new boolean[8];
+    // ── Color (glColor4f) — thread-local to avoid cross-thread corruption ──
+    // ── Texture 2D enable/disable — thread-local (per texture unit) ─────────
+    // Both moved to ThreadCoreState to prevent Client thread texture loading
+    // from overwriting Modern Splash's render state on its separate thread.
 
     // ── Normalize / RescaleNormal ───────────────────────────────────────
     private boolean normalizeEnabled = false;
@@ -232,18 +319,24 @@ public final class CoreStateTracker {
 
     // ── Color ───────────────────────────────────────────────────────────
 
-    public void color(float r, float g, float b, float a) { colorR = r; colorG = g; colorB = b; colorA = a; generation++; }
-    public void resetColor() { colorR = 1.0f; colorG = 1.0f; colorB = 1.0f; colorA = 1.0f; generation++; }
-    public float getColorR() { return colorR; }
-    public float getColorG() { return colorG; }
-    public float getColorB() { return colorB; }
-    public float getColorA() { return colorA; }
+    public void color(float r, float g, float b, float a) {
+        ThreadCoreState cs = coreState();
+        cs.colorR = r; cs.colorG = g; cs.colorB = b; cs.colorA = a; generation++;
+    }
+    public void resetColor() {
+        ThreadCoreState cs = coreState();
+        cs.colorR = 1.0f; cs.colorG = 1.0f; cs.colorB = 1.0f; cs.colorA = 1.0f; generation++;
+    }
+    public float getColorR() { return coreState().colorR; }
+    public float getColorG() { return coreState().colorG; }
+    public float getColorB() { return coreState().colorB; }
+    public float getColorA() { return coreState().colorA; }
 
     // ── Texture 2D ──────────────────────────────────────────────────────
 
-    public void enableTexture2D(int unit) { if (unit >= 0 && unit < 8) { texture2DEnabled[unit] = true; generation++; } }
-    public void disableTexture2D(int unit) { if (unit >= 0 && unit < 8) { texture2DEnabled[unit] = false; generation++; } }
-    public boolean isTexture2DEnabled(int unit) { return unit >= 0 && unit < 8 && texture2DEnabled[unit]; }
+    public void enableTexture2D(int unit) { if (unit >= 0 && unit < 8) { coreState().texture2DEnabled[unit] = true; generation++; } }
+    public void disableTexture2D(int unit) { if (unit >= 0 && unit < 8) { coreState().texture2DEnabled[unit] = false; generation++; } }
+    public boolean isTexture2DEnabled(int unit) { return unit >= 0 && unit < 8 && coreState().texture2DEnabled[unit]; }
 
     // ── Normalize ───────────────────────────────────────────────────────
 
@@ -340,4 +433,135 @@ public final class CoreStateTracker {
         }
     }
     public float[] getClipPlaneEquation(int plane) { return plane >= 0 && plane < 6 ? clipPlaneEquation[plane] : new float[4]; }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CORE-PROFILE STATE — per-thread, tracked + real GL calls, skip redundant
+    //
+    // Each GL context (thread) has independent state. Modern Splash runs
+    // on a separate thread with its own GL context; without ThreadLocal,
+    // the dirty-flag optimization skips GL calls on the wrong context.
+    // ═══════════════════════════════════════════════════════════════════
+
+    private static class ThreadCoreState {
+        // Core-profile state (real GL calls, dirty-flagged per-thread)
+        boolean depthTestEnabled = false;
+        int depthFunc = GL11.GL_LESS;
+        boolean depthMask = true;
+        boolean blendEnabled = false;
+        int blendSrcRGB = GL11.GL_ONE, blendDstRGB = GL11.GL_ZERO;
+        int blendSrcAlpha = GL11.GL_ONE, blendDstAlpha = GL11.GL_ZERO;
+        boolean cullEnabled = false;
+        int cullFaceMode = GL11.GL_BACK;
+        boolean polygonOffsetEnabled = false;
+        float polygonOffsetFactor = 0.0f, polygonOffsetUnits = 0.0f;
+        boolean colorMaskR = true, colorMaskG = true, colorMaskB = true, colorMaskA = true;
+
+        // Removed state that must be per-thread to avoid cross-thread corruption.
+        // Modern Splash toggles texture2D and color on its thread while the Client
+        // thread does texture loading — without ThreadLocal, the Client thread's
+        // enableTexture2D overwrites the splash thread's disableTexture2D, causing
+        // the shader to sample garbage textures and making bars invisible.
+        boolean[] texture2DEnabled = {true, false, false, false, false, false, false, false};
+        float colorR = 1.0f, colorG = 1.0f, colorB = 1.0f, colorA = 1.0f;
+    }
+
+    private static final ThreadLocal<ThreadCoreState> threadCoreState =
+            ThreadLocal.withInitial(ThreadCoreState::new);
+
+    private ThreadCoreState coreState() { return threadCoreState.get(); }
+
+    // ── Depth ──────────────────────────────────────────────────────────
+
+    public void enableDepthTest(boolean enable) {
+        ThreadCoreState cs = coreState();
+        if (enable == cs.depthTestEnabled) return;
+        cs.depthTestEnabled = enable;
+        if (enable) GL11.glEnable(GL11.GL_DEPTH_TEST);
+        else GL11.glDisable(GL11.GL_DEPTH_TEST);
+    }
+    public void depthFunc(int func) {
+        ThreadCoreState cs = coreState();
+        if (func == cs.depthFunc) return;
+        cs.depthFunc = func;
+        GL11.glDepthFunc(func);
+    }
+    public void depthMask(boolean flag) {
+        ThreadCoreState cs = coreState();
+        if (flag == cs.depthMask) return;
+        cs.depthMask = flag;
+        GL11.glDepthMask(flag);
+    }
+    public boolean isDepthTestEnabled() { return coreState().depthTestEnabled; }
+    public int getDepthFunc() { return coreState().depthFunc; }
+    public boolean getDepthMask() { return coreState().depthMask; }
+
+    // ── Blend ──────────────────────────────────────────────────────────
+
+    public void enableBlend(boolean enable) {
+        ThreadCoreState cs = coreState();
+        if (enable == cs.blendEnabled) return;
+        cs.blendEnabled = enable;
+        if (enable) GL11.glEnable(GL11.GL_BLEND);
+        else GL11.glDisable(GL11.GL_BLEND);
+    }
+    public void blendFunc(int src, int dst) {
+        blendFuncSeparate(src, dst, src, dst);
+    }
+    public void blendFuncSeparate(int srcRGB, int dstRGB, int srcAlpha, int dstAlpha) {
+        ThreadCoreState cs = coreState();
+        if (srcRGB == cs.blendSrcRGB && dstRGB == cs.blendDstRGB
+                && srcAlpha == cs.blendSrcAlpha && dstAlpha == cs.blendDstAlpha) return;
+        cs.blendSrcRGB = srcRGB; cs.blendDstRGB = dstRGB;
+        cs.blendSrcAlpha = srcAlpha; cs.blendDstAlpha = dstAlpha;
+        GL14.glBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha);
+    }
+    public boolean isBlendEnabled() { return coreState().blendEnabled; }
+
+    // ── Cull face ──────────────────────────────────────────────────────
+
+    public void enableCull(boolean enable) {
+        ThreadCoreState cs = coreState();
+        if (enable == cs.cullEnabled) return;
+        cs.cullEnabled = enable;
+        if (enable) GL11.glEnable(GL11.GL_CULL_FACE);
+        else GL11.glDisable(GL11.GL_CULL_FACE);
+    }
+    public void cullFace(int mode) {
+        ThreadCoreState cs = coreState();
+        if (mode == cs.cullFaceMode) return;
+        cs.cullFaceMode = mode;
+        GL11.glCullFace(mode);
+    }
+    public boolean isCullEnabled() { return coreState().cullEnabled; }
+    public int getCullFaceMode() { return coreState().cullFaceMode; }
+
+    // ── Polygon offset ─────────────────────────────────────────────────
+
+    public void enablePolygonOffset(boolean enable) {
+        ThreadCoreState cs = coreState();
+        if (enable == cs.polygonOffsetEnabled) return;
+        cs.polygonOffsetEnabled = enable;
+        if (enable) GL11.glEnable(0x8037); // GL_POLYGON_OFFSET_FILL
+        else GL11.glDisable(0x8037);
+    }
+    public void polygonOffset(float factor, float units) {
+        ThreadCoreState cs = coreState();
+        if (factor == cs.polygonOffsetFactor && units == cs.polygonOffsetUnits) return;
+        cs.polygonOffsetFactor = factor; cs.polygonOffsetUnits = units;
+        GL11.glPolygonOffset(factor, units);
+    }
+    public boolean isPolygonOffsetEnabled() { return coreState().polygonOffsetEnabled; }
+
+    // ── Color mask ─────────────────────────────────────────────────────
+
+    public void colorMask(boolean r, boolean g, boolean b, boolean a) {
+        ThreadCoreState cs = coreState();
+        if (r == cs.colorMaskR && g == cs.colorMaskG && b == cs.colorMaskB && a == cs.colorMaskA) return;
+        cs.colorMaskR = r; cs.colorMaskG = g; cs.colorMaskB = b; cs.colorMaskA = a;
+        GL11.glColorMask(r, g, b, a);
+    }
+    public boolean getColorMaskR() { return coreState().colorMaskR; }
+    public boolean getColorMaskG() { return coreState().colorMaskG; }
+    public boolean getColorMaskB() { return coreState().colorMaskB; }
+    public boolean getColorMaskA() { return coreState().colorMaskA; }
 }

@@ -11,7 +11,8 @@ import org.lwjgl.opengl.GL43;
 import org.lwjgl.opengl.GLDebugMessageCallbackI;
 import org.lwjgl.system.MemoryUtil;
 
-import java.util.List;
+import net.minecraftforge.fml.common.event.FMLLoadCompleteEvent;
+
 import java.util.Map;
 import java.util.Set;
 
@@ -41,7 +42,21 @@ public class GL46Core {
         // instead of stuttering on the first rendered frame.
         com.github.gl46core.gl.CoreShaderProgram.INSTANCE.ensureInitialized();
 
+        // Run GL diagnostics — probes limits, extensions, common pitfalls
+        com.github.gl46core.gl.GLDiagnostics.INSTANCE.runStartupChecks();
+
+        // Print final error summary on JVM shutdown
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            com.github.gl46core.gl.GLDiagnostics.INSTANCE.printFinalSummary();
+        }, "gl46core-diag-shutdown"));
+
         logDeprecatedUsageSummary();
+    }
+
+    @Mod.EventHandler
+    public void onLoadComplete(FMLLoadCompleteEvent event) {
+        // Inject config GUIs for mods that have .cfg files but no GUI factory
+        com.github.gl46core.client.ConfigGuiInjector.inject();
     }
 
     private void logDeprecatedUsageSummary() {
@@ -70,12 +85,12 @@ public class GL46Core {
             String[] parts = glVersionStr.split("[\\s.]");
             int major = Integer.parseInt(parts[0]);
             int minor = Integer.parseInt(parts[1]);
-            if (major > 4 || (major == 4 && minor >= 5)) {
-                return; // GL 4.5+ — all good
+            if (major > 4 || (major == 4 && minor >= 6)) {
+                return; // GL 4.6+ — all good
             }
             String renderer = GL11.glGetString(GL11.GL_RENDERER);
             throw new RuntimeException(
-                "GL46 Core requires OpenGL 4.5 or higher.\n" +
+                "GL46 Core requires OpenGL 4.6 or higher.\n" +
                 "Your GPU/driver only supports OpenGL " + major + "." + minor + ".\n" +
                 "GPU: " + renderer + "\n\n" +
                 "Please update your graphics drivers, or remove gl46core from your mods folder.\n" +
@@ -88,30 +103,68 @@ public class GL46Core {
         }
     }
 
+    // ── Centralized GL diagnostics ────────────────────────────────────
+
+    /**
+     * Check for GL errors after a direct GL call.
+     * Delegates to {@link com.github.gl46core.gl.GLDiagnostics} which handles
+     * adaptive detail levels, per-label dedup, and periodic summaries.
+     */
+    public static void glCheck(String label) {
+        com.github.gl46core.gl.GLDiagnostics.INSTANCE.check(label);
+    }
+
+    /**
+     * Called once per frame (from clear()) to drive warm-up countdown
+     * and periodic error summaries.
+     */
+    public static void onFrameTick() {
+        com.github.gl46core.gl.GLDiagnostics.INSTANCE.onFrameTick();
+    }
+
     private void setupDebugOutput() {
         try {
-            // GL_DEBUG_OUTPUT = 0x92E0 (async — no sync stalls)
+            // GL_DEBUG_OUTPUT = 0x92E0
             GL11.glEnable(0x92E0);
-            // ENABLE SYNCHRONOUS for debugging so we get accurate stack traces
-            GL11.glEnable(0x8242);
-            
+            // NOTE: GL_DEBUG_OUTPUT_SYNCHRONOUS (0x8242) intentionally NOT enabled.
+            // It forces GPU/CPU sync on every GL call, causing massive FPS drops
+            // especially with performance mods (Celeritas, Sodium, etc.).
+
+            // Ensure ALL debug messages are enabled (NVIDIA may filter some by default)
+            GL43.glDebugMessageControl(GL11.GL_DONT_CARE, GL11.GL_DONT_CARE, GL11.GL_DONT_CARE,
+                    (int[]) null, true);
+
+            // Suppress known NVIDIA driver noise at the GL level:
+            //  131218 = "Vertex shader being recompiled based on GL state" (one-time warm-up)
+            //  131169 = "Framebuffer detailed info: driver allocated storage for renderbuffer"
+            //  131204 = "Texture state usage warning: texture object (0) on unit 1 has no base level"
+            GL43.glDebugMessageControl(GL11.GL_DONT_CARE, GL11.GL_DONT_CARE, GL11.GL_DONT_CARE,
+                    new int[]{131218, 131169, 131204}, false);
+
             GL43.glDebugMessageCallback((GLDebugMessageCallbackI) (source, type, id, severity, length, message, userParam) -> {
-                // GL_DEBUG_TYPE_ERROR = 0x824C, GL_DEBUG_SEVERITY_HIGH = 0x9146
-                // Only log actual errors, not performance warnings (which spam on NVIDIA)
-                if (type == 0x824C || severity == 0x9146) {
-                    String msg = MemoryUtil.memUTF8(message, length);
-                    if (msg.contains("Uniform is not an array") || msg.contains("invalid")) {
-                        LOGGER.error("[GL DEBUG] type=0x{} sev=0x{}: {}",
-                            Integer.toHexString(type), Integer.toHexString(severity), msg, new RuntimeException("GL ERROR TRACE"));
-                    } else {
-                        LOGGER.error("[GL DEBUG] type=0x{} sev=0x{}: {}",
-                            Integer.toHexString(type), Integer.toHexString(severity), msg);
-                    }
-                }
+                String msg = MemoryUtil.memUTF8(message, length);
+                com.github.gl46core.gl.GLDiagnostics.INSTANCE.recordDebugMessage(source, type, id, severity, msg);
             }, 0L);
-            LOGGER.info("GL debug output enabled (sync, stack traces)");
+
+            // Drain any errors generated by the setup itself
+            while (GL11.glGetError() != 0) {}
+
+            LOGGER.info("GL debug output enabled (async)");
         } catch (Throwable e) {
             LOGGER.warn("Failed to enable GL debug output: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Disable GL debug output entirely — called when diagnostics transitions to OFF
+     * to eliminate any remaining callback overhead.
+     */
+    public static void disableDebugOutput() {
+        try {
+            GL11.glDisable(0x92E0); // GL_DEBUG_OUTPUT
+            LOGGER.info("GL debug output disabled (diagnostics OFF)");
+        } catch (Throwable e) {
+            LOGGER.warn("Failed to disable GL debug output: {}", e.getMessage());
         }
     }
 }

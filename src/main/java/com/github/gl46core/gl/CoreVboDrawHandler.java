@@ -21,12 +21,7 @@ import org.lwjgl.opengl.GL45;
  */
 public final class CoreVboDrawHandler {
 
-    // ── Terrain VAO (fixed BLOCK format) ─────────────────────────────
-    private static int terrainVao = 0;
     private static final int TERRAIN_STRIDE = 28;
-
-    // ── General-purpose VAO (legacy vertex array emulation) ──────────
-    private static int generalVao = 0;
 
     // Legacy vertex array state tracking
     private static int posSize = 3, posType = GL11.GL_FLOAT, posStride = 0;
@@ -96,10 +91,10 @@ public final class CoreVboDrawHandler {
      * Uses DSA for VAO creation but bind-to-modify for attribs (VBO is external).
      */
     public static void setupArrayPointers() {
+        RenderContext ctx = RenderContext.get();
+        int terrainVao = ctx.handle(RenderContext.GL.TERRAIN_VAO);
         if (terrainVao == 0) {
-            int[] vaos = new int[1];
-            GL45.glCreateVertexArrays(vaos);
-            terrainVao = vaos[0];
+            terrainVao = ctx.createVAO(RenderContext.GL.TERRAIN_VAO);
         }
         GL30.glBindVertexArray(terrainVao);
         terrainVaoBound = true;
@@ -134,10 +129,10 @@ public final class CoreVboDrawHandler {
      * Uses DSA for VAO creation but bind-to-modify for attribs (VBO is external).
      */
     private static void setupGeneralVao() {
+        RenderContext ctx = RenderContext.get();
+        int generalVao = ctx.handle(RenderContext.GL.GENERAL_VAO);
         if (generalVao == 0) {
-            int[] vaos = new int[1];
-            GL45.glCreateVertexArrays(vaos);
-            generalVao = vaos[0];
+            generalVao = ctx.createVAO(RenderContext.GL.GENERAL_VAO);
         }
         GL30.glBindVertexArray(generalVao);
 

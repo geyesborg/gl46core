@@ -63,9 +63,7 @@ public final class DisplayListCache {
     private float recordU = 0, recordV = 0;
     private float recordNx = 0, recordNy = 0, recordNz = 1;
 
-    // Reusable VBO/VAO for replay (we upload and draw one chunk at a time)
-    private int replayVao = 0;
-    private int replayVbo = 0;
+    // Reusable VBO/VAO for replay — handles owned by RenderContext
 
     // Next ID for glGenLists (OpenGL returns contiguous block)
     private int nextListId = 1;
@@ -300,15 +298,12 @@ public final class DisplayListCache {
     }
 
     private void ensureReplayBuffers() {
-        if (replayVao == 0) {
-            int[] vaos = new int[1];
-            GL45.glCreateVertexArrays(vaos);
-            replayVao = vaos[0];
+        RenderContext ctx = RenderContext.get();
+        if (!ctx.isAlive(RenderContext.GL.DISPLAY_LIST_VAO)) {
+            ctx.createVAO(RenderContext.GL.DISPLAY_LIST_VAO);
         }
-        if (replayVbo == 0) {
-            int[] bufs = new int[1];
-            GL45.glCreateBuffers(bufs);
-            replayVbo = bufs[0];
+        if (!ctx.isAlive(RenderContext.GL.DISPLAY_LIST_VBO)) {
+            ctx.createBuffer(RenderContext.GL.DISPLAY_LIST_VBO);
         }
     }
 
@@ -323,9 +318,10 @@ public final class DisplayListCache {
             data = expandQuadsToTriangles(chunk.vertexData(), chunk.vertexCount());
         }
 
-        GL30.glBindVertexArray(replayVao);
+        RenderContext ctx = RenderContext.get();
+        GL30.glBindVertexArray(ctx.handle(RenderContext.GL.DISPLAY_LIST_VAO));
         CoreVboDrawHandler.setTerrainVaoUnbound();
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, replayVbo);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, ctx.handle(RenderContext.GL.DISPLAY_LIST_VBO));
 
         data.rewind();
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, GL15.GL_STREAM_DRAW);
