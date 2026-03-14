@@ -163,6 +163,7 @@ public final class FrameOrchestrator {
         // Fire lifecycle events
         fireSceneCollected();
         firePassGraphBuilt();
+        fireBeforeSubmit();
     }
 
     /**
@@ -320,7 +321,8 @@ public final class FrameOrchestrator {
             com.github.gl46core.api.debug.RenderProfiler.INSTANCE.endPass(lastUploadedPassType);
         }
 
-        // Fire onFrameEnd for all registered event listeners
+        // All draws submitted — fire onAfterSubmit then onFrameEnd
+        fireAfterSubmit();
         fireFrameEnd();
 
         currentStage = FrameStage.IDLE;
@@ -379,6 +381,20 @@ public final class FrameOrchestrator {
         List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
         for (int i = 0; i < listeners.size(); i++) {
             listeners.get(i).onAfterPass(frameContext, pass);
+        }
+    }
+
+    private void fireBeforeSubmit() {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onBeforeSubmit(frameContext);
+        }
+    }
+
+    private void fireAfterSubmit() {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onAfterSubmit(frameContext);
         }
     }
 
