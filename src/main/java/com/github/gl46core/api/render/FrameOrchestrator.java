@@ -1,5 +1,7 @@
 package com.github.gl46core.api.render;
 
+import com.github.gl46core.api.hook.RenderEventListener;
+import com.github.gl46core.api.hook.RenderRegistry;
 import com.github.gl46core.api.render.gpu.GpuBuffer;
 import com.github.gl46core.api.render.gpu.GpuBufferPool;
 import org.lwjgl.opengl.GL31;
@@ -108,6 +110,9 @@ public final class FrameOrchestrator {
         passesExecuted = 0;
         lastUploadedPassType = null;
         BuiltinPasses.setActive(PassType.TERRAIN_OPAQUE);
+
+        // Fire onFrameBegin for all registered event listeners
+        fireFrameBegin();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -143,9 +148,19 @@ public final class FrameOrchestrator {
         // Upload packed scene data to GPU
         sceneUbo.upload(sceneData.getBuffer(), 0, SceneData.GPU_SIZE);
 
-        // Register built-in passes and build the pass graph
+        // Register built-in passes
         BuiltinPasses.register(passGraph);
+
+        // Register mod-submitted passes from RenderRegistry
+        for (RenderPass modPass : RenderRegistry.INSTANCE.getRegisteredPasses()) {
+            passGraph.addPass(modPass);
+        }
+
         buildPassGraph();
+
+        // Fire lifecycle events
+        fireSceneCollected();
+        firePassGraphBuilt();
     }
 
     /**
@@ -165,6 +180,11 @@ public final class FrameOrchestrator {
      * Called by mixin hooks at MC rendering stage boundaries.
      */
     public void setActivePass(PassType type) {
+        // Fire onAfterPass for the outgoing pass
+        if (lastUploadedPassType != null && lastUploadedPassType != type) {
+            fireAfterPass(BuiltinPasses.getActivePass());
+        }
+
         BuiltinPasses.setActive(type);
 
         // Only re-upload if pass actually changed
@@ -172,6 +192,10 @@ public final class FrameOrchestrator {
         lastUploadedPassType = type;
 
         BuiltinPasses.TranslationPass pass = BuiltinPasses.getActivePass();
+
+        // Fire onBeforePass — listeners can modify PassData
+        fireBeforePass(pass, pass.getPassData());
+
         pass.setup(frameContext, pass.getPassData());
 
         if (passUbo != null) {
@@ -282,6 +306,10 @@ public final class FrameOrchestrator {
     public void endFrame() {
         currentStage = FrameStage.END;
         frameEndNanos = System.nanoTime();
+
+        // Fire onFrameEnd for all registered event listeners
+        fireFrameEnd();
+
         currentStage = FrameStage.IDLE;
     }
 
@@ -301,4 +329,50 @@ public final class FrameOrchestrator {
     public int  getPassesExecuted()   { return passesExecuted; }
     public long getFrameTimeNanos()   { return frameEndNanos - frameStartNanos; }
     public double getFrameTimeMs()    { return (frameEndNanos - frameStartNanos) / 1_000_000.0; }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Event Dispatch
+    // ═══════════════════════════════════════════════════════════════════
+
+    private void fireFrameBegin() {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onFrameBegin(frameContext);
+        }
+    }
+
+    private void fireSceneCollected() {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onSceneCollected(frameContext);
+        }
+    }
+
+    private void firePassGraphBuilt() {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onPassGraphBuilt(frameContext);
+        }
+    }
+
+    private void fireBeforePass(RenderPass pass, PassData passData) {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onBeforePass(frameContext, pass, passData);
+        }
+    }
+
+    private void fireAfterPass(RenderPass pass) {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onAfterPass(frameContext, pass);
+        }
+    }
+
+    private void fireFrameEnd() {
+        List<RenderEventListener> listeners = RenderRegistry.INSTANCE.getEventListeners();
+        for (int i = 0; i < listeners.size(); i++) {
+            listeners.get(i).onFrameEnd(frameContext);
+        }
+    }
 }
