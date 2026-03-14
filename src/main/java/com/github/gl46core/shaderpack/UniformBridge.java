@@ -106,6 +106,7 @@ public final class UniformBridge {
         SCREEN_BRIGHTNESS,
         NIGHT_VISION,
         BLINDNESS,
+        SHADOW_DISTANCE,
 
         // Scalars — int
         WORLD_TIME,
@@ -195,6 +196,7 @@ public final class UniformBridge {
         defs.put("screenBrightness", UploadType.SCREEN_BRIGHTNESS);
         defs.put("nightVision",      UploadType.NIGHT_VISION);
         defs.put("blindness",        UploadType.BLINDNESS);
+        defs.put("shadowDistance",   UploadType.SHADOW_DISTANCE);
 
         // Int scalars
         defs.put("worldTime",           UploadType.WORLD_TIME);
@@ -342,11 +344,19 @@ public final class UniformBridge {
                 GL20.glUniformMatrix4fv(e.location, false, matBuf);
                 break;
             case SHADOW_MODEL_VIEW:
+                ctx.getShadow().getShadowViewMatrix().get(matBuf);
+                GL20.glUniformMatrix4fv(e.location, false, matBuf);
+                break;
             case SHADOW_PROJECTION:
+                ctx.getShadow().getShadowProjectionMatrix().get(matBuf);
+                GL20.glUniformMatrix4fv(e.location, false, matBuf);
+                break;
             case SHADOW_MODEL_VIEW_INVERSE:
+                ctx.getShadow().getShadowViewInverse().get(matBuf);
+                GL20.glUniformMatrix4fv(e.location, false, matBuf);
+                break;
             case SHADOW_PROJECTION_INVERSE:
-                // Identity until shadow pass is implemented
-                scratchMat.identity().get(matBuf);
+                ctx.getShadow().getShadowProjectionInverse().get(matBuf);
                 GL20.glUniformMatrix4fv(e.location, false, matBuf);
                 break;
 
@@ -437,6 +447,9 @@ public final class UniformBridge {
                 break;
             case BLINDNESS:
                 GL20.glUniform1f(e.location, getBlindnessStrength());
+                break;
+            case SHADOW_DISTANCE:
+                GL20.glUniform1f(e.location, ctx.getShadow().getShadowDistance());
                 break;
 
             // ── Int scalars ──

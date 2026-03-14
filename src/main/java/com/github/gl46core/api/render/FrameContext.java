@@ -25,6 +25,7 @@ public final class FrameContext {
     private final WeatherState weather = new WeatherState();
     private final FogState fog = new FogState();
     private final GlobalLightState globalLight = new GlobalLightState();
+    private final ShadowState shadow = new ShadowState();
     private final RenderCapabilityState capabilities = new RenderCapabilityState();
 
     // Feature flags for this frame (derived from capabilities + config + dimension)
@@ -49,6 +50,7 @@ public final class FrameContext {
     public WeatherState             getWeather()      { return weather; }
     public FogState                 getFog()          { return fog; }
     public GlobalLightState         getGlobalLight()  { return globalLight; }
+    public ShadowState              getShadow()       { return shadow; }
     public RenderCapabilityState    getCapabilities() { return capabilities; }
 
     // ── Frame-level accessors ──

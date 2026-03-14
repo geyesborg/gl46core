@@ -194,6 +194,17 @@ public final class FrameOrchestrator {
             materialBuffer.init(256);
         }
 
+        // Compute shadow matrices from sun direction + camera position
+        ShadowState shadow = frameContext.getShadow();
+        shadow.compute(
+                frameContext.getGlobalLight().getSunDirection(),
+                frameContext.getCamera().getPosition(),
+                frameContext.getDimension().getCelestialAngle(),
+                128.0f, // shadow distance — TODO: make configurable
+                RenderTargetManager.INSTANCE.getShadowResolution()
+        );
+        frameContext.setShadowsActive(shadow.isValid());
+
         // Upload packed scene data to GPU
         sceneUbo.upload(sceneData.getBuffer(), 0, SceneData.GPU_SIZE);
 
@@ -234,6 +245,14 @@ public final class FrameOrchestrator {
         if (lastUploadedPassType != null && lastUploadedPassType != type) {
             fireAfterPass(BuiltinPasses.getActivePass());
             com.github.gl46core.api.debug.RenderProfiler.INSTANCE.endPass(lastUploadedPassType);
+
+            // Leaving a shadow pass — unbind shadow FBO, restore default
+            if (lastUploadedPassType.isShadowPass() && !type.isShadowPass()) {
+                com.github.gl46core.api.render.gpu.FramebufferObject.unbind();
+                org.lwjgl.opengl.GL11.glViewport(0, 0,
+                        frameContext.getCamera().getViewportWidth(),
+                        frameContext.getCamera().getViewportHeight());
+            }
         }
 
         BuiltinPasses.setActive(type);
@@ -250,6 +269,15 @@ public final class FrameOrchestrator {
 
         pass.setup(frameContext, pass.getPassData());
 
+        // Entering a shadow pass — bind shadow FBO
+        if (type.isShadowPass() && frameContext.isShadowsActive()) {
+            com.github.gl46core.api.render.gpu.FramebufferObject shadowFbo =
+                    RenderTargetManager.INSTANCE.getShadowFbo();
+            if (shadowFbo != null && shadowFbo.isCreated()) {
+                shadowFbo.bindAndClear();
+            }
+        }
+
         if (passUbo != null) {
             passUbo.upload(pass.getPassData().pack(), 0, PassData.GPU_SIZE);
             passUbo.bindBase(GL31.GL_UNIFORM_BUFFER, PASS_UBO_BINDING);
@@ -264,6 +292,18 @@ public final class FrameOrchestrator {
             materialBuffer.bind();
             materialBufferDirty = false;
         }
+        // Bind shadow textures for sampling during non-shadow passes
+        if (!type.isShadowPass() && frameContext.isShadowsActive()) {
+            com.github.gl46core.api.render.gpu.RenderTarget st0 = RenderTargetManager.INSTANCE.getShadowDepthTarget(0);
+            com.github.gl46core.api.render.gpu.RenderTarget st1 = RenderTargetManager.INSTANCE.getShadowDepthTarget(1);
+            com.github.gl46core.api.render.gpu.RenderTarget sc0 = RenderTargetManager.INSTANCE.getShadowColorTarget(0);
+            com.github.gl46core.api.render.gpu.RenderTarget sc1 = RenderTargetManager.INSTANCE.getShadowColorTarget(1);
+            if (st0 != null && st0.isAllocated()) st0.bindToUnit(15); // shadowtex0
+            if (st1 != null && st1.isAllocated()) st1.bindToUnit(16); // shadowtex1
+            if (sc0 != null && sc0.isAllocated()) sc0.bindToUnit(17); // shadowcolor0
+            if (sc1 != null && sc1.isAllocated()) sc1.bindToUnit(18); // shadowcolor1
+        }
+
         // Bind shaderpack program if active
         com.github.gl46core.shaderpack.ShaderpackManager spm = com.github.gl46core.shaderpack.ShaderpackManager.INSTANCE;
         if (spm.isActive()) {

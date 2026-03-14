@@ -221,6 +221,16 @@ public final class BuiltinPasses {
             // Configure our internal PassData for this pass type
             int flags = PassData.FLAG_DEPTH_TEST | PassData.FLAG_DEPTH_WRITE;
 
+            if (type.isShadowPass()) {
+                // Shadow passes: depth-only, backface cull, no lighting
+                flags = PassData.FLAG_DEPTH_TEST | PassData.FLAG_DEPTH_WRITE | PassData.FLAG_BACKFACE_CULL;
+                passData.setLightingMode(PassData.LIGHTING_UNLIT);
+                ShadowState shadow = frame.getShadow();
+                int res = shadow.getShadowResolution();
+                passData.configure(type, flags, res, res);
+                return;
+            }
+
             switch (type) {
                 case SKY:
                     // Sky: no depth write, no cull

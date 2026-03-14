@@ -114,6 +114,11 @@ public final class DebugOverlayHandler {
                     rtm.getTargetCount(), vramStr, rtm.getScreenWidth(), rtm.getScreenHeight(), rtm.getShadowResolution()));
         }
 
+        com.github.gl46core.api.render.ShadowState shadowState = FrameOrchestrator.INSTANCE.getFrameContext().getShadow();
+        event.getRight().add(String.format("Shadow: %s | dist=%.0f | res=%d",
+                shadowState.isValid() ? "active" : "inactive",
+                shadowState.getShadowDistance(), shadowState.getShadowResolution()));
+
         com.github.gl46core.shaderpack.ShaderpackManager spm = com.github.gl46core.shaderpack.ShaderpackManager.INSTANCE;
         if (spm.isActive()) {
             event.getRight().add(String.format("Shaderpack: %s | %d programs | %d uniforms",
