@@ -53,9 +53,10 @@ public final class RenderContext {
         // Shader
         SHADER_PROGRAM,
 
-        // UBOs
-        PER_FRAME_UBO,
-        PER_DRAW_UBO,
+        // UBOs (3-way split: scene / object / material)
+        PER_FRAME_UBO,      // PerScene: lighting + fog (binding 0)
+        PER_DRAW_UBO,       // PerObject: matrices (binding 1)
+        PER_MATERIAL_UBO,   // PerMaterial: state flags + texgen + clips (binding 2)
 
         // CoreDrawHandler (BufferBuilder immediate draws)
         IMMEDIATE_VAO,

@@ -15,9 +15,10 @@ import java.nio.ByteOrder;
  * lazily compiles specialized programs for each unique GL state combination.
  * This class manages the shared UBO buffers and uploads uniform data.
  *
- * Uses GL4.5 DSA UBOs for all uniform data — two buffer objects:
- *   - PerFrame (binding 0): matrices + lighting (208 bytes)
- *   - PerDraw  (binding 1): fog, alpha test, state flags (256 bytes)
+ * Uses GL4.5 DSA UBOs for all uniform data — three buffer objects:
+ *   - PerScene    (binding 0, 112 bytes): lighting + fog params (uploaded ~once/frame)
+ *   - PerObject   (binding 1, 128 bytes): matrices (uploaded per draw call)
+ *   - PerMaterial  (binding 2, 224 bytes): state flags + texgen + clips (uploaded on state change)
  *
  * Format-dependent attribute presence (hasColor, hasTexCoord, hasNormal) is
  * handled via glVertexAttrib* default values instead of UBO flags, eliminating
@@ -36,50 +37,49 @@ public final class CoreShaderProgram {
 
     private boolean initialized = false;
 
-    // PerFrame layout (std140, binding 0) — 208 bytes
-    //   mat4 uModelViewProjection  offset 0   (64 bytes)
-    //   mat4 uModelView            offset 64  (64 bytes)
-    //   vec4 uLight0Position       offset 128 (16 bytes)
-    //   vec4 uLight0Diffuse        offset 144 (16 bytes)
-    //   vec4 uLight1Position       offset 160 (16 bytes)
-    //   vec4 uLight1Diffuse        offset 176 (16 bytes)
-    //   vec4 uLightModelAmbient    offset 192 (16 bytes)  — vec3 padded to vec4
-    private static final int PF_SIZE = 208;
-    private final ByteBuffer pfBuf = ByteBuffer.allocateDirect(PF_SIZE).order(ByteOrder.nativeOrder());
+    // PerScene layout (std140, binding 0) — 112 bytes
+    //   vec4  uLight0Position       offset 0
+    //   vec4  uLight0Diffuse        offset 16
+    //   vec4  uLight1Position       offset 32
+    //   vec4  uLight1Diffuse        offset 48
+    //   vec4  uLightModelAmbient    offset 64
+    //   vec4  uFogColor             offset 80
+    //   float uFogDensity           offset 96
+    //   float uFogStart             offset 100
+    //   float uFogEnd               offset 104
+    //   int   uFogMode              offset 108
+    private static final int PS_SIZE = 112;
+    private final ByteBuffer psBuf = ByteBuffer.allocateDirect(PS_SIZE).order(ByteOrder.nativeOrder());
 
-    // PerDraw layout (std140, binding 1) — 80 bytes
-    //   vec4  uFogColor              offset 0
-    //   float uAlphaRef              offset 16
-    //   float uFogDensity            offset 20
-    //   float uFogStart              offset 24
-    //   float uFogEnd                offset 28
-    //   vec2  uGlobalLightMapCoord   offset 32
-    //   int   uAlphaFunc             offset 40
-    //   int   uFogMode               offset 44
-    //   int   uLightMapEnabled       offset 48
-    //   int   uTextureEnabled        offset 52
-    //   int   uAlphaTestEnabled      offset 56
-    //   int   uFogEnabled            offset 60
-    //   int   uLightingEnabled       offset 64
-    //   int   uUseLightMapTexture    offset 68
-    //   int   uTexEnvMode            offset 72
-    //   int   uTexGenEnabled          offset 76  (bitmask: bit0=S, bit1=T)
-    //   vec4  uTexGenEyePlaneS        offset 80
-    //   vec4  uTexGenEyePlaneT        offset 96
-    //   vec4  uTexGenObjectPlaneS     offset 112
-    //   vec4  uTexGenObjectPlaneT     offset 128
-    //   int   uTexGenSMode            offset 144
-    //   int   uTexGenTMode            offset 148
-    //   int   uClipPlaneEnabled       offset 152 (bitmask: bit0=plane0 .. bit5=plane5)
-    //   int   _pad0                   offset 156
-    //   vec4  uClipPlane0             offset 160
-    //   vec4  uClipPlane1             offset 176
-    //   vec4  uClipPlane2             offset 192
-    //   vec4  uClipPlane3             offset 208
-    //   vec4  uClipPlane4             offset 224
-    //   vec4  uClipPlane5             offset 240
-    private static final int PD_SIZE = 256;
-    private final ByteBuffer pdBuf = ByteBuffer.allocateDirect(PD_SIZE).order(ByteOrder.nativeOrder());
+    // PerObject layout (std140, binding 1) — 128 bytes
+    //   mat4  uModelViewProjection  offset 0
+    //   mat4  uModelView            offset 64
+    private static final int PO_SIZE = 128;
+    private final ByteBuffer poBuf = ByteBuffer.allocateDirect(PO_SIZE).order(ByteOrder.nativeOrder());
+
+    // PerMaterial layout (std140, binding 2) — 224 bytes
+    //   float uAlphaRef             offset 0
+    //   int   uAlphaFunc            offset 4
+    //   vec2  uGlobalLightMapCoord  offset 8
+    //   int   uLightMapEnabled      offset 16
+    //   int   uTextureEnabled       offset 20
+    //   int   uAlphaTestEnabled     offset 24
+    //   int   uFogEnabled           offset 28
+    //   int   uLightingEnabled      offset 32
+    //   int   uUseLightMapTexture   offset 36
+    //   int   uTexEnvMode           offset 40
+    //   int   uTexGenEnabled        offset 44
+    //   vec4  uTexGenEyePlaneS      offset 48
+    //   vec4  uTexGenEyePlaneT      offset 64
+    //   vec4  uTexGenObjectPlaneS   offset 80
+    //   vec4  uTexGenObjectPlaneT   offset 96
+    //   int   uTexGenSMode          offset 112
+    //   int   uTexGenTMode          offset 116
+    //   int   uClipPlaneEnabled     offset 120
+    //   int   _pad0                 offset 124
+    //   vec4  uClipPlane[6]         offset 128
+    private static final int PM_SIZE = 224;
+    private final ByteBuffer pmBuf = ByteBuffer.allocateDirect(PM_SIZE).order(ByteOrder.nativeOrder());
 
     private final org.joml.Matrix4f cachedMVP = new org.joml.Matrix4f();
 
@@ -112,12 +112,14 @@ public final class CoreShaderProgram {
 
         RenderContext ctx = RenderContext.get();
 
-        // Create UBOs with DSA (GL4.5) via RenderContext
-        int perFrameUbo = ctx.createBuffer(RenderContext.GL.PER_FRAME_UBO);
-        int perDrawUbo  = ctx.createBuffer(RenderContext.GL.PER_DRAW_UBO);
+        // Create 3 UBOs with DSA (GL4.5) via RenderContext
+        int sceneUbo    = ctx.createBuffer(RenderContext.GL.PER_FRAME_UBO);
+        int objectUbo   = ctx.createBuffer(RenderContext.GL.PER_DRAW_UBO);
+        int materialUbo = ctx.createBuffer(RenderContext.GL.PER_MATERIAL_UBO);
 
-        GL45.glNamedBufferStorage(perFrameUbo, PF_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
-        GL45.glNamedBufferStorage(perDrawUbo, PD_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
+        GL45.glNamedBufferStorage(sceneUbo,    PS_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
+        GL45.glNamedBufferStorage(objectUbo,   PO_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
+        GL45.glNamedBufferStorage(materialUbo, PM_SIZE, GL45.GL_DYNAMIC_STORAGE_BIT);
 
         // NOTE: glBindBufferBase is per-context state and is NOT shared between
         // GL contexts. We bind in bind() instead, so splash threads with
@@ -127,8 +129,8 @@ public final class CoreShaderProgram {
         // to prevent NVIDIA debug warning about texture object 0 with no base level
         ctx.createDummyTexture(RenderContext.GL.DUMMY_TEXTURE);
 
-        GL46Core.LOGGER.info("Shader variant system initialized with DSA UBOs (pf={}, pd={})",
-            perFrameUbo, perDrawUbo);
+        GL46Core.LOGGER.info("Shader variant system initialized with 3 DSA UBOs (scene={}, object={}, material={})",
+            sceneUbo, objectUbo, materialUbo);
     }
 
     /**
@@ -141,9 +143,10 @@ public final class CoreShaderProgram {
      */
     public void bind(boolean hasColor, boolean hasTexCoord, boolean hasNormal, boolean hasLightMap) {
         RenderContext ctx = RenderContext.get();
-        int perFrameUbo = ctx.handle(RenderContext.GL.PER_FRAME_UBO);
-        int perDrawUbo  = ctx.handle(RenderContext.GL.PER_DRAW_UBO);
-        if (perFrameUbo == 0 || perDrawUbo == 0) return;
+        int sceneUbo    = ctx.handle(RenderContext.GL.PER_FRAME_UBO);
+        int objectUbo   = ctx.handle(RenderContext.GL.PER_DRAW_UBO);
+        int materialUbo = ctx.handle(RenderContext.GL.PER_MATERIAL_UBO);
+        if (sceneUbo == 0 || objectUbo == 0 || materialUbo == 0) return;
 
         // Ensure this thread starts with correct default state (texture2D enabled).
         // Modern Splash's thread can leave texture2DEnabled[0]=false in the shared
@@ -156,8 +159,9 @@ public final class CoreShaderProgram {
         // Must happen BEFORE variant selection so lastProgramId is correct.
         long currentThread = Thread.currentThread().getId();
         if (currentThread != lastBoundThread) {
-            GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, perFrameUbo);
-            GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 1, perDrawUbo);
+            GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, sceneUbo);
+            GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 1, objectUbo);
+            GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 2, materialUbo);
             lastBoundThread = currentThread;
             // Force full re-upload and program re-bind on context switch
             lastStateGeneration = -1;
@@ -216,27 +220,41 @@ public final class CoreShaderProgram {
         int gen = state.getGeneration();
         boolean stateChanged = gen != lastStateGeneration;
 
-        // ── PerFrame UBO: matrices + lighting ──
-        if (matricesChanged || stateChanged) {
-            ms.getProjection().mul(ms.getModelView(), cachedMVP);
-            cachedMVP.get(0, pfBuf);
-            ms.getModelView().get(64, pfBuf);
-
+        // ── PerScene UBO (binding 0): lighting + fog ──
+        // Only uploaded when state generation changes (lighting/fog rarely change)
+        if (stateChanged) {
             float[] l0p = state.getLightPosition(0);
-            pfBuf.putFloat(128, l0p[0]); pfBuf.putFloat(132, l0p[1]); pfBuf.putFloat(136, l0p[2]); pfBuf.putFloat(140, l0p[3]);
+            psBuf.putFloat(0,  l0p[0]); psBuf.putFloat(4,  l0p[1]); psBuf.putFloat(8,  l0p[2]); psBuf.putFloat(12, l0p[3]);
             float[] l0d = state.getLightDiffuse(0);
-            pfBuf.putFloat(144, l0d[0]); pfBuf.putFloat(148, l0d[1]); pfBuf.putFloat(152, l0d[2]); pfBuf.putFloat(156, l0d[3]);
+            psBuf.putFloat(16, l0d[0]); psBuf.putFloat(20, l0d[1]); psBuf.putFloat(24, l0d[2]); psBuf.putFloat(28, l0d[3]);
             float[] l1p = state.getLightPosition(1);
-            pfBuf.putFloat(160, l1p[0]); pfBuf.putFloat(164, l1p[1]); pfBuf.putFloat(168, l1p[2]); pfBuf.putFloat(172, l1p[3]);
+            psBuf.putFloat(32, l1p[0]); psBuf.putFloat(36, l1p[1]); psBuf.putFloat(40, l1p[2]); psBuf.putFloat(44, l1p[3]);
             float[] l1d = state.getLightDiffuse(1);
-            pfBuf.putFloat(176, l1d[0]); pfBuf.putFloat(180, l1d[1]); pfBuf.putFloat(184, l1d[2]); pfBuf.putFloat(188, l1d[3]);
-            pfBuf.putFloat(192, state.getLightModelAmbientR());
-            pfBuf.putFloat(196, state.getLightModelAmbientG());
-            pfBuf.putFloat(200, state.getLightModelAmbientB());
-            pfBuf.putFloat(204, 0.0f);
+            psBuf.putFloat(48, l1d[0]); psBuf.putFloat(52, l1d[1]); psBuf.putFloat(56, l1d[2]); psBuf.putFloat(60, l1d[3]);
+            psBuf.putFloat(64, state.getLightModelAmbientR());
+            psBuf.putFloat(68, state.getLightModelAmbientG());
+            psBuf.putFloat(72, state.getLightModelAmbientB());
+            psBuf.putFloat(76, 0.0f);
+            psBuf.putFloat(80, state.getFogR()); psBuf.putFloat(84, state.getFogG());
+            psBuf.putFloat(88, state.getFogB()); psBuf.putFloat(92, state.getFogA());
+            psBuf.putFloat(96, state.getFogDensity());
+            psBuf.putFloat(100, state.getFogStart());
+            psBuf.putFloat(104, state.getFogEnd());
+            psBuf.putInt(108, state.getFogMode());
 
-            pfBuf.position(0).limit(PF_SIZE);
-            GL45.glNamedBufferSubData(perFrameUbo, 0, pfBuf);
+            psBuf.position(0).limit(PS_SIZE);
+            GL45.glNamedBufferSubData(sceneUbo, 0, psBuf);
+        }
+
+        // ── PerObject UBO (binding 1): matrices ──
+        // Uploaded every draw when modelview or projection changes
+        if (matricesChanged) {
+            ms.getProjection().mul(ms.getModelView(), cachedMVP);
+            cachedMVP.get(0, poBuf);
+            ms.getModelView().get(64, poBuf);
+
+            poBuf.position(0).limit(PO_SIZE);
+            GL45.glNamedBufferSubData(objectUbo, 0, poBuf);
 
             ms.clearModelViewDirty();
             ms.clearProjectionDirty();
@@ -244,56 +262,50 @@ public final class CoreShaderProgram {
             lastProjDirty = projDirty;
         }
 
-        // ── PerDraw UBO: fog, alpha test, state flags ──
+        // ── PerMaterial UBO (binding 2): state flags + texgen + clips ──
         int formatFlags = (hasColor ? 1 : 0) | (hasTexCoord ? 2 : 0) | (hasNormal ? 4 : 0) | (hasLightMap ? 8 : 0);
         if (stateChanged || formatFlags != lastFormatFlags) {
             int hlm = hasLightMap ? 1 : 0;
             int ulmt = (!hasLightMap && state.isTexture2DEnabled(1)) ? 1 : 0;
 
-            pdBuf.putFloat(0, state.getFogR()); pdBuf.putFloat(4, state.getFogG());
-            pdBuf.putFloat(8, state.getFogB()); pdBuf.putFloat(12, state.getFogA());
-            pdBuf.putFloat(16, state.getAlphaRef());
-            pdBuf.putFloat(20, state.getFogDensity());
-            pdBuf.putFloat(24, state.getFogStart());
-            pdBuf.putFloat(28, state.getFogEnd());
-            pdBuf.putFloat(32, state.getLightmapX()); pdBuf.putFloat(36, state.getLightmapY());
-            pdBuf.putInt(40, state.getAlphaFunc());
-            pdBuf.putInt(44, state.getFogMode());
-            pdBuf.putInt(48, hlm);
-            pdBuf.putInt(52, state.isTexture2DEnabled(0) ? 1 : 0);
-            pdBuf.putInt(56, state.isAlphaTestEnabled() ? 1 : 0);
-            pdBuf.putInt(60, state.isFogEnabled() ? 1 : 0);
-            pdBuf.putInt(64, state.isLightingEnabled() ? 1 : 0);
-            pdBuf.putInt(68, ulmt);
-            pdBuf.putInt(72, state.getTexEnvMode());
+            pmBuf.putFloat(0, state.getAlphaRef());
+            pmBuf.putInt(4, state.getAlphaFunc());
+            pmBuf.putFloat(8, state.getLightmapX()); pmBuf.putFloat(12, state.getLightmapY());
+            pmBuf.putInt(16, hlm);
+            pmBuf.putInt(20, state.isTexture2DEnabled(0) ? 1 : 0);
+            pmBuf.putInt(24, state.isAlphaTestEnabled() ? 1 : 0);
+            pmBuf.putInt(28, state.isFogEnabled() ? 1 : 0);
+            pmBuf.putInt(32, state.isLightingEnabled() ? 1 : 0);
+            pmBuf.putInt(36, ulmt);
+            pmBuf.putInt(40, state.getTexEnvMode());
             int texGenBits = (state.isTexGenEnabled(0) ? 1 : 0) | (state.isTexGenEnabled(1) ? 2 : 0)
                     | (state.isTexGenEnabled(2) ? 4 : 0) | (state.isTexGenEnabled(3) ? 8 : 0);
-            pdBuf.putInt(76, texGenBits);
+            pmBuf.putInt(44, texGenBits);
             // TexGen eye planes (S and T)
             float[] eyeS = state.getTexGenEyePlane(0);
-            pdBuf.putFloat(80, eyeS[0]); pdBuf.putFloat(84, eyeS[1]); pdBuf.putFloat(88, eyeS[2]); pdBuf.putFloat(92, eyeS[3]);
+            pmBuf.putFloat(48, eyeS[0]); pmBuf.putFloat(52, eyeS[1]); pmBuf.putFloat(56, eyeS[2]); pmBuf.putFloat(60, eyeS[3]);
             float[] eyeT = state.getTexGenEyePlane(1);
-            pdBuf.putFloat(96, eyeT[0]); pdBuf.putFloat(100, eyeT[1]); pdBuf.putFloat(104, eyeT[2]); pdBuf.putFloat(108, eyeT[3]);
+            pmBuf.putFloat(64, eyeT[0]); pmBuf.putFloat(68, eyeT[1]); pmBuf.putFloat(72, eyeT[2]); pmBuf.putFloat(76, eyeT[3]);
             // TexGen object planes (S and T)
             float[] objS = state.getTexGenObjectPlane(0);
-            pdBuf.putFloat(112, objS[0]); pdBuf.putFloat(116, objS[1]); pdBuf.putFloat(120, objS[2]); pdBuf.putFloat(124, objS[3]);
+            pmBuf.putFloat(80, objS[0]); pmBuf.putFloat(84, objS[1]); pmBuf.putFloat(88, objS[2]); pmBuf.putFloat(92, objS[3]);
             float[] objT = state.getTexGenObjectPlane(1);
-            pdBuf.putFloat(128, objT[0]); pdBuf.putFloat(132, objT[1]); pdBuf.putFloat(136, objT[2]); pdBuf.putFloat(140, objT[3]);
-            pdBuf.putInt(144, state.getTexGenMode(0));
-            pdBuf.putInt(148, state.getTexGenMode(1));
+            pmBuf.putFloat(96, objT[0]); pmBuf.putFloat(100, objT[1]); pmBuf.putFloat(104, objT[2]); pmBuf.putFloat(108, objT[3]);
+            pmBuf.putInt(112, state.getTexGenMode(0));
+            pmBuf.putInt(116, state.getTexGenMode(1));
             int clipBits = 0;
             for (int i = 0; i < 6; i++) {
                 if (state.isClipPlaneEnabled(i)) clipBits |= (1 << i);
                 float[] eq = state.getClipPlaneEquation(i);
-                int off = 160 + i * 16;
-                pdBuf.putFloat(off, eq[0]); pdBuf.putFloat(off + 4, eq[1]);
-                pdBuf.putFloat(off + 8, eq[2]); pdBuf.putFloat(off + 12, eq[3]);
+                int off = 128 + i * 16;
+                pmBuf.putFloat(off, eq[0]); pmBuf.putFloat(off + 4, eq[1]);
+                pmBuf.putFloat(off + 8, eq[2]); pmBuf.putFloat(off + 12, eq[3]);
             }
-            pdBuf.putInt(152, clipBits);
-            pdBuf.putInt(156, 0);
+            pmBuf.putInt(120, clipBits);
+            pmBuf.putInt(124, 0);
 
-            pdBuf.position(0).limit(PD_SIZE);
-            GL45.glNamedBufferSubData(perDrawUbo, 0, pdBuf);
+            pmBuf.position(0).limit(PM_SIZE);
+            GL45.glNamedBufferSubData(materialUbo, 0, pmBuf);
 
             lastStateGeneration = gen;
             lastFormatFlags = formatFlags;
@@ -324,7 +336,7 @@ public final class CoreShaderProgram {
     }
 
     public int getPerDrawUbo() {
-        return RenderContext.get().handle(RenderContext.GL.PER_DRAW_UBO);
+        return RenderContext.get().handle(RenderContext.GL.PER_MATERIAL_UBO);
     }
 
 }

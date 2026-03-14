@@ -188,43 +188,46 @@ layout(location = 2) in vec2 aTexCoord;
 layout(location = 3) in vec2 aLightMap;
 layout(location = 4) in vec3 aNormal;
 
-// ── UBOs (same layout for all variants) ──
-layout(std140, binding = 0) uniform PerFrame {
-    mat4 uModelViewProjection;  // offset 0
-    mat4 uModelView;            // offset 64
-    vec4 uLight0Position;       // offset 128
-    vec4 uLight0Diffuse;        // offset 144
-    vec4 uLight1Position;       // offset 160
-    vec4 uLight1Diffuse;        // offset 176
-    vec4 uLightModelAmbient;    // offset 192
+// ── UBOs (3-way split, same layout for all variants) ──
+layout(std140, binding = 0) uniform PerScene {
+    vec4 uLight0Position;       // offset 0
+    vec4 uLight0Diffuse;        // offset 16
+    vec4 uLight1Position;       // offset 32
+    vec4 uLight1Diffuse;        // offset 48
+    vec4 uLightModelAmbient;    // offset 64
+    vec4 uFogColor;             // offset 80
+    float uFogDensity;          // offset 96
+    float uFogStart;            // offset 100
+    float uFogEnd;              // offset 104
+    int uFogMode;               // offset 108
 };
 
-layout(std140, binding = 1) uniform PerDraw {
-    vec4 uFogColor;             // offset 0
-    float uAlphaRef;            // offset 16
-    float uFogDensity;          // offset 20
-    float uFogStart;            // offset 24
-    float uFogEnd;              // offset 28
-    vec2 uGlobalLightMapCoord;  // offset 32
-    int uAlphaFunc;             // offset 40
-    int uFogMode;               // offset 44
-    int uLightMapEnabled;       // offset 48
-    int uTextureEnabled;        // offset 52
-    int uAlphaTestEnabled;      // offset 56
-    int uFogEnabled;            // offset 60
-    int uLightingEnabled;       // offset 64
-    int uUseLightMapTexture;    // offset 68
-    int uTexEnvMode;            // offset 72
-    int uTexGenEnabled;         // offset 76
-    vec4 uTexGenEyePlaneS;      // offset 80
-    vec4 uTexGenEyePlaneT;      // offset 96
-    vec4 uTexGenObjectPlaneS;   // offset 112
-    vec4 uTexGenObjectPlaneT;   // offset 128
-    int uTexGenSMode;           // offset 144
-    int uTexGenTMode;           // offset 148
-    int uClipPlaneEnabled;      // offset 152
-    int _pad0;                  // offset 156
-    vec4 uClipPlane[6];         // offset 160
+layout(std140, binding = 1) uniform PerObject {
+    mat4 uModelViewProjection;  // offset 0
+    mat4 uModelView;            // offset 64
+};
+
+layout(std140, binding = 2) uniform PerMaterial {
+    float uAlphaRef;            // offset 0
+    int uAlphaFunc;             // offset 4
+    vec2 uGlobalLightMapCoord;  // offset 8
+    int uLightMapEnabled;       // offset 16
+    int uTextureEnabled;        // offset 20
+    int uAlphaTestEnabled;      // offset 24
+    int uFogEnabled;            // offset 28
+    int uLightingEnabled;       // offset 32
+    int uUseLightMapTexture;    // offset 36
+    int uTexEnvMode;            // offset 40
+    int uTexGenEnabled;         // offset 44
+    vec4 uTexGenEyePlaneS;      // offset 48
+    vec4 uTexGenEyePlaneT;      // offset 64
+    vec4 uTexGenObjectPlaneS;   // offset 80
+    vec4 uTexGenObjectPlaneT;   // offset 96
+    int uTexGenSMode;           // offset 112
+    int uTexGenTMode;           // offset 116
+    int uClipPlaneEnabled;      // offset 120
+    int _pad0;                  // offset 124
+    vec4 uClipPlane[6];         // offset 128
 };
 
 // ── Varyings ──
@@ -330,15 +333,23 @@ in float vFogDist;
 layout(binding = 0) uniform sampler2D uTexture;
 layout(binding = 1) uniform sampler2D uLightMapTex;
 
-layout(std140, binding = 1) uniform PerDraw {
+layout(std140, binding = 0) uniform PerScene {
+    vec4 uLight0Position;
+    vec4 uLight0Diffuse;
+    vec4 uLight1Position;
+    vec4 uLight1Diffuse;
+    vec4 uLightModelAmbient;
     vec4 uFogColor;
-    float uAlphaRef;
     float uFogDensity;
     float uFogStart;
     float uFogEnd;
-    vec2 uGlobalLightMapCoord;
-    int uAlphaFunc;
     int uFogMode;
+};
+
+layout(std140, binding = 2) uniform PerMaterial {
+    float uAlphaRef;
+    int uAlphaFunc;
+    vec2 uGlobalLightMapCoord;
     int uLightMapEnabled;
     int uTextureEnabled;
     int uAlphaTestEnabled;
