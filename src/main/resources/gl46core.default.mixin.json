@@ -21,6 +21,7 @@
     "MixinEntityRenderer",
     "MixinRenderGlobal",
     "MixinParticleManager",
+    "MixinTileEntityRendererDispatcher",
     "AccessorVertexBuffer",
     "AccessorModelBox",
     "MixinVertexBuffer"
