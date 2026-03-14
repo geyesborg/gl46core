@@ -139,15 +139,14 @@ public final class TerrainDrawCollector {
         // This also uploads PerObject with current matrices (we overwrite per chunk).
         shader.bind(true, true, false, true);
 
+        // Configure terrain VAO format once (DSA), then only swap VBO per chunk
+        CoreVboDrawHandler.ensureTerrainVaoDSA();
+
         for (int i = 0; i < count; i++) {
             DrawPacket p = packets[i];
 
-            // Bind this chunk's VBO
-            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, p.getGeometrySourceId());
-            CoreVboDrawHandler.setVboBound(true);
-
-            // Set up terrain vertex attribs on the terrain VAO
-            CoreVboDrawHandler.setupArrayPointers();
+            // Fast VBO swap — ONE DSA call instead of re-specifying all attrib pointers
+            CoreVboDrawHandler.bindTerrainChunkVbo(p.getGeometrySourceId());
 
             // Compute chunk-specific matrices directly (no push/translate/pop)
             baseMV.translate(p.getTranslateX(), p.getTranslateY(), p.getTranslateZ(), chunkMV);

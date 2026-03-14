@@ -38,6 +38,7 @@ public final class CoreVboDrawHandler {
 
     // Software-tracked binding state (avoids glGetInteger sync points)
     private static boolean terrainVaoBound = false;
+    private static boolean terrainVaoDsaConfigured = false;
     private static boolean vboBound = false;
 
     private CoreVboDrawHandler() {}
@@ -85,7 +86,66 @@ public final class CoreVboDrawHandler {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * Replaces VboRenderList.setupArrayPointers().
+     * DSA terrain VAO setup — configures the vertex format ONCE,
+     * then per-chunk only needs {@link #bindTerrainChunkVbo(int)}.
+     *
+     * All terrain chunks share the same BLOCK format (28 bytes/vertex).
+     * Uses glVertexArrayAttribFormat + glVertexArrayVertexBuffer to
+     * separate format specification from buffer binding.
+     */
+    public static void ensureTerrainVaoDSA() {
+        RenderContext ctx = RenderContext.get();
+        int vao = ctx.handle(RenderContext.GL.TERRAIN_VAO);
+        if (vao == 0) {
+            vao = ctx.createVAO(RenderContext.GL.TERRAIN_VAO);
+        }
+
+        if (!terrainVaoDsaConfigured) {
+            int B = 0; // all attribs share binding point 0
+
+            // Position: 3 floats at relative offset 0
+            GL45.glVertexArrayAttribFormat(vao, CoreShaderProgram.ATTR_POSITION, 3, GL11.GL_FLOAT, false, 0);
+            GL45.glVertexArrayAttribBinding(vao, CoreShaderProgram.ATTR_POSITION, B);
+            GL45.glEnableVertexArrayAttrib(vao, CoreShaderProgram.ATTR_POSITION);
+
+            // Color: 4 ubytes at relative offset 12, normalized
+            GL45.glVertexArrayAttribFormat(vao, CoreShaderProgram.ATTR_COLOR, 4, GL11.GL_UNSIGNED_BYTE, true, 12);
+            GL45.glVertexArrayAttribBinding(vao, CoreShaderProgram.ATTR_COLOR, B);
+            GL45.glEnableVertexArrayAttrib(vao, CoreShaderProgram.ATTR_COLOR);
+
+            // TexCoord: 2 floats at relative offset 16
+            GL45.glVertexArrayAttribFormat(vao, CoreShaderProgram.ATTR_TEXCOORD, 2, GL11.GL_FLOAT, false, 16);
+            GL45.glVertexArrayAttribBinding(vao, CoreShaderProgram.ATTR_TEXCOORD, B);
+            GL45.glEnableVertexArrayAttrib(vao, CoreShaderProgram.ATTR_TEXCOORD);
+
+            // Lightmap: 2 shorts at relative offset 24
+            GL45.glVertexArrayAttribFormat(vao, CoreShaderProgram.ATTR_LIGHTMAP, 2, GL11.GL_SHORT, false, 24);
+            GL45.glVertexArrayAttribBinding(vao, CoreShaderProgram.ATTR_LIGHTMAP, B);
+            GL45.glEnableVertexArrayAttrib(vao, CoreShaderProgram.ATTR_LIGHTMAP);
+
+            // Normal: not present in BLOCK format
+            GL45.glDisableVertexArrayAttrib(vao, CoreShaderProgram.ATTR_NORMAL);
+
+            terrainVaoDsaConfigured = true;
+        }
+
+        GL30.glBindVertexArray(vao);
+        terrainVaoBound = true;
+    }
+
+    /**
+     * Fast per-chunk VBO swap on the terrain VAO.
+     * Uses DSA glVertexArrayVertexBuffer — ONE call per chunk instead of
+     * re-specifying all attribute pointers.
+     */
+    public static void bindTerrainChunkVbo(int vboId) {
+        int vao = RenderContext.get().handle(RenderContext.GL.TERRAIN_VAO);
+        GL45.glVertexArrayVertexBuffer(vao, 0, vboId, 0, TERRAIN_STRIDE);
+        vboBound = true;
+    }
+
+    /**
+     * Replaces VboRenderList.setupArrayPointers() (legacy path).
      * Assumes the chunk VBO is already bound to GL_ARRAY_BUFFER.
      * Sets up vertex attributes on a VAO using the fixed BLOCK vertex format.
      * Uses DSA for VAO creation but bind-to-modify for attribs (VBO is external).
