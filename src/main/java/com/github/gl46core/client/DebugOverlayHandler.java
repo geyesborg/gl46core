@@ -44,5 +44,15 @@ public final class DebugOverlayHandler {
         com.github.gl46core.gl.TerrainDrawCollector t = com.github.gl46core.gl.TerrainDrawCollector.INSTANCE;
         event.getRight().add(String.format("Terrain queue: %d chunks | %d verts | %d layers sorted",
                 t.getFrameChunksQueued(), t.getFrameVerticesQueued(), t.getFrameSortedLayers()));
+
+        com.github.gl46core.gl.ObjectBuffer ob = com.github.gl46core.gl.ObjectBuffer.INSTANCE;
+        if (ob.getAlignedStride() > 0) {
+            int objCount = t.getFrameChunksQueued();
+            long bulkBytes = (long) objCount * ob.getAlignedStride();
+            String bulkStr = bulkBytes < 1024 ? bulkBytes + "B"
+                    : String.format("%.1fKB", bulkBytes / 1024.0);
+            event.getRight().add(String.format("ObjectBuffer: stride=%d | bulk=%s | align=%d",
+                    ob.getAlignedStride(), bulkStr, ob.getUboAlignment()));
+        }
     }
 }
