@@ -87,6 +87,16 @@ public final class DebugOverlayHandler {
         event.getRight().add(String.format("Pass: %s | Graph: %d | Exec: %d | Subs: %d",
                 activePass, passCount, orch.getPassesExecuted(), submissions));
 
+        // Per-pass draw breakdown (only passes with draws > 0)
+        StringBuilder passBreak = new StringBuilder("Draws/pass:");
+        for (com.github.gl46core.api.render.PassType pt : com.github.gl46core.api.render.PassType.values()) {
+            int dc = p.getPassDrawCount(pt);
+            if (dc > 0) {
+                passBreak.append(' ').append(pt.getId()).append('=').append(dc);
+            }
+        }
+        event.getRight().add(passBreak.toString());
+
         com.github.gl46core.api.render.FogState fog = FrameOrchestrator.INSTANCE.getFrameContext().getFog();
         String fogMode = fog.getMode() == 0x2601 ? "LINEAR" : fog.getMode() == 0x0800 ? "EXP" : fog.getMode() == 0x0801 ? "EXP2" : "0x" + Integer.toHexString(fog.getMode());
         event.getRight().add(String.format("Fog: %s start=%.0f end=%.0f d=%.4f col=(%.2f,%.2f,%.2f)",
