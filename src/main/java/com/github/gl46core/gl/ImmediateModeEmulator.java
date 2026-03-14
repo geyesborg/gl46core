@@ -198,6 +198,10 @@ public final class ImmediateModeEmulator {
             GL11.glDrawArrays(actualMode, 0, actualCount);
             com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(actualCount);
 
+            // Shadow submission for pass tracking (no lightmap in immediate mode)
+            com.github.gl46core.api.translate.LegacyDrawTranslator.INSTANCE.translateDraw(
+                actualMode, actualCount, 0, true, true, true, false);
+
             // Don't unbind shader or VAO/VBO — dirty tracking handles re-use
         } catch (Throwable t) {
             com.github.gl46core.GL46Core.LOGGER.error("[ImmediateModeEmulator] Exception in flush():", t);

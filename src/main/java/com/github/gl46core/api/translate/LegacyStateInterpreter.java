@@ -136,17 +136,40 @@ public final class LegacyStateInterpreter {
     }
 
     /**
-     * Determine the appropriate PassType for the current GL state.
+     * Determine the appropriate PassType for the current draw call.
+     *
+     * Uses the active pass from BuiltinPasses as the primary source.
+     * For geometry passes (terrain/entity), refines using GL state:
+     *   - blend enabled → translucent variant
+     *   - alpha test enabled → cutout variant
+     *   - else → opaque variant
      */
     public PassType inferPassType() {
+        PassType active = BuiltinPasses.getActivePassType();
+
+        // Non-geometry passes: use the active pass directly
+        if (active == PassType.SKY || active == PassType.HAND
+                || active == PassType.PARTICLES || active == PassType.WEATHER
+                || active == PassType.UI || active == PassType.DEBUG_OVERLAY
+                || active == PassType.BLOCK_ENTITY || active == PassType.WATER
+                || active == PassType.OUTLINE || active == PassType.POST_CHAIN
+                || active.isShadowPass()) {
+            return active;
+        }
+
+        // Geometry passes: refine based on GL blend/alpha state
         CoreStateTracker st = CoreStateTracker.INSTANCE;
+        boolean isTerrain = (active == PassType.TERRAIN_OPAQUE
+                || active == PassType.TERRAIN_CUTOUT
+                || active == PassType.TERRAIN_TRANSLUCENT);
+
         if (st.isBlendEnabled()) {
-            return PassType.ENTITY_TRANSLUCENT;
+            return isTerrain ? PassType.TERRAIN_TRANSLUCENT : PassType.ENTITY_TRANSLUCENT;
         }
         if (st.isAlphaTestEnabled()) {
-            return PassType.TERRAIN_CUTOUT;
+            return isTerrain ? PassType.TERRAIN_CUTOUT : PassType.ENTITY_OPAQUE;
         }
-        return PassType.TERRAIN_OPAQUE;
+        return isTerrain ? PassType.TERRAIN_OPAQUE : PassType.ENTITY_OPAQUE;
     }
 
     /**
