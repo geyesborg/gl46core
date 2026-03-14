@@ -246,12 +246,11 @@ public final class FrameOrchestrator {
             fireAfterPass(BuiltinPasses.getActivePass());
             com.github.gl46core.api.debug.RenderProfiler.INSTANCE.endPass(lastUploadedPassType);
 
-            // Leaving a shadow pass — unbind shadow FBO, restore default
+            // Leaving a shadow pass — rebind MC's framebuffer (not FBO 0)
+            // MC renders to its own Framebuffer, not the default framebuffer
             if (lastUploadedPassType.isShadowPass() && !type.isShadowPass()) {
-                com.github.gl46core.api.render.gpu.FramebufferObject.unbind();
-                org.lwjgl.opengl.GL11.glViewport(0, 0,
-                        frameContext.getCamera().getViewportWidth(),
-                        frameContext.getCamera().getViewportHeight());
+                net.minecraft.client.Minecraft.getMinecraft().getFramebuffer()
+                        .bindFramebuffer(true); // binds FBO + restores viewport
             }
         }
 
@@ -259,6 +258,7 @@ public final class FrameOrchestrator {
 
         // Only re-upload if pass actually changed
         if (type == lastUploadedPassType) return;
+        PassType previousPassType = lastUploadedPassType;
         lastUploadedPassType = type;
         com.github.gl46core.api.debug.RenderProfiler.INSTANCE.beginPass(type);
 
@@ -270,11 +270,17 @@ public final class FrameOrchestrator {
         pass.setup(frameContext, pass.getPassData());
 
         // Entering a shadow pass — bind shadow FBO
+        // Only clear on the first shadow sub-pass; subsequent shadow sub-passes just bind
         if (type.isShadowPass() && frameContext.isShadowsActive()) {
             com.github.gl46core.api.render.gpu.FramebufferObject shadowFbo =
                     RenderTargetManager.INSTANCE.getShadowFbo();
             if (shadowFbo != null && shadowFbo.isCreated()) {
-                shadowFbo.bindAndClear();
+                boolean firstShadow = previousPassType == null || !previousPassType.isShadowPass();
+                if (firstShadow) {
+                    shadowFbo.bindAndClear();
+                } else {
+                    shadowFbo.bind();
+                }
             }
         }
 

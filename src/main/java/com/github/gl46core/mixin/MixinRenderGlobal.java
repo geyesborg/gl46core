@@ -2,6 +2,7 @@ package com.github.gl46core.mixin;
 
 import com.github.gl46core.api.render.FrameOrchestrator;
 import com.github.gl46core.api.render.PassType;
+import com.github.gl46core.api.render.ShadowRenderer;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.util.BlockRenderLayer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -29,6 +30,10 @@ public class MixinRenderGlobal {
     private void gl46core$onRenderBlockLayer(BlockRenderLayer layer, double partialTicks,
                                               int pass, net.minecraft.entity.Entity entity,
                                               CallbackInfoReturnable<Integer> cir) {
+        // Guard: during shadow pass, renderBlockLayer is called re-entrantly
+        // from ShadowRenderer. Don't change the active pass in that case.
+        if (ShadowRenderer.INSTANCE.isShadowPassActive()) return;
+
         PassType passType;
         if (layer == BlockRenderLayer.SOLID) {
             passType = PassType.TERRAIN_OPAQUE;
@@ -44,6 +49,8 @@ public class MixinRenderGlobal {
     private void gl46core$onRenderEntities(net.minecraft.entity.Entity renderViewEntity,
                                             net.minecraft.client.renderer.culling.ICamera camera,
                                             float partialTicks, CallbackInfo ci) {
+        // Guard: skip during shadow pass re-entrant calls
+        if (ShadowRenderer.INSTANCE.isShadowPassActive()) return;
         FrameOrchestrator.INSTANCE.setActivePass(PassType.ENTITY_OPAQUE);
     }
 

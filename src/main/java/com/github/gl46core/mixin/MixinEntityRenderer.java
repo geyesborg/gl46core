@@ -5,6 +5,7 @@ import com.github.gl46core.api.render.DynamicLightCollector;
 import com.github.gl46core.api.render.FrameOrchestrator;
 import com.github.gl46core.api.render.GlobalLightState;
 import com.github.gl46core.api.render.PassType;
+import com.github.gl46core.api.render.ShadowRenderer;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
 import com.github.gl46core.api.translate.LegacyStateInterpreter;
 import com.github.gl46core.gl.CoreMatrixStack;
@@ -114,6 +115,19 @@ public class MixinEntityRenderer {
         orch.endCollectScene();
 
         RenderProfiler.INSTANCE.beginPass("world_pass_" + pass);
+    }
+
+    /**
+     * Execute shadow pass — fires before the first renderBlockLayer call
+     * in renderWorldPass, after setupTerrain has built the chunk render list.
+     * Re-renders terrain from the light's perspective into the shadow FBO.
+     */
+    @Inject(method = "renderWorldPass",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/RenderGlobal;renderBlockLayer(Lnet/minecraft/util/BlockRenderLayer;DILnet/minecraft/entity/Entity;)I",
+                    ordinal = 0))
+    private void gl46core$executeShadowPass(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
+        ShadowRenderer.INSTANCE.executeShadowPass(partialTicks);
     }
 
     /**
