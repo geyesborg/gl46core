@@ -1,5 +1,9 @@
 package com.github.gl46core.api.render;
 
+import com.github.gl46core.api.render.gpu.GpuBuffer;
+import com.github.gl46core.api.render.gpu.GpuBufferPool;
+import org.lwjgl.opengl.GL31;
+
 import java.util.EnumMap;
 import java.util.List;
 
@@ -27,6 +31,12 @@ public final class FrameOrchestrator {
     private final FrameContext frameContext = new FrameContext();
     private final PassGraph passGraph = new PassGraph();
     private final SceneData sceneData = new SceneData();
+
+    // Full SceneData UBO — binding 5 (separate from legacy PerScene at binding 0)
+    // Uploaded once per frame after scene collection. Shaders can opt into this
+    // for the full 560-byte layout vs the legacy 112-byte subset.
+    public static final int SCENE_UBO_BINDING = 5;
+    private GpuBuffer sceneUbo;
 
     // Per-pass-type queues — one queue per PassType
     private final EnumMap<PassType, RenderQueue> queues = new EnumMap<>(PassType.class);
@@ -107,10 +117,28 @@ public final class FrameOrchestrator {
     }
 
     /**
-     * Finalize scene collection. Packs scene data for GPU upload.
+     * Finalize scene collection. Packs scene data and uploads to GPU.
      */
     public void endCollectScene() {
         sceneData.pack(frameContext);
+
+        // Lazily create the SceneData UBO on first use
+        if (sceneUbo == null) {
+            sceneUbo = GpuBufferPool.INSTANCE.createDynamicUBO(SceneData.GPU_SIZE);
+        }
+
+        // Upload packed scene data to GPU
+        sceneUbo.upload(sceneData.getBuffer(), 0, SceneData.GPU_SIZE);
+    }
+
+    /**
+     * Bind the full SceneData UBO for shader access.
+     * Call from pass setup when the shader supports the extended layout.
+     */
+    public void bindSceneData() {
+        if (sceneUbo != null) {
+            sceneUbo.bindBase(GL31.GL_UNIFORM_BUFFER, SCENE_UBO_BINDING);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════

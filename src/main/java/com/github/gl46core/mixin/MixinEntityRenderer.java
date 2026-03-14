@@ -2,11 +2,13 @@ package com.github.gl46core.mixin;
 
 import com.github.gl46core.api.debug.RenderProfiler;
 import com.github.gl46core.api.render.FrameOrchestrator;
+import com.github.gl46core.api.render.GlobalLightState;
 import com.github.gl46core.api.translate.LegacyDrawTranslator;
 import com.github.gl46core.api.translate.LegacyStateInterpreter;
 import com.github.gl46core.gl.CoreMatrixStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.EntityRenderer;
+import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -95,6 +97,10 @@ public class MixinEntityRenderer {
             celestialAngle, sunBrightness, starBrightness,
             (float) skyColor.x, (float) skyColor.y, (float) skyColor.z);
 
+        // Capture extended lighting (sun/moon direction, color, environment)
+        gl46core$captureExtendedLighting(orch.getFrameContext().getGlobalLight(),
+            celestialAngle, sunBrightness, hasSky, dimId, rain, thunder);
+
         // Finalize scene collection
         orch.endCollectScene();
 
@@ -120,5 +126,70 @@ public class MixinEntityRenderer {
 
         // Finalize profiler (F3 debug screen reads stats directly)
         RenderProfiler.INSTANCE.endFrame();
+    }
+
+    // Reusable scratch vectors for extended lighting capture
+    private static final Vector3f scratchSunDir  = new Vector3f();
+    private static final Vector3f scratchMoonDir = new Vector3f();
+    private static final Vector3f scratchSunCol  = new Vector3f();
+    private static final Vector3f scratchMoonCol = new Vector3f();
+
+    /**
+     * Derive extended lighting state from MC world properties.
+     *
+     * MC 1.12.2 celestialAngle: 0.0=noon, 0.25=sunset, 0.5=midnight, 0.75=sunrise
+     * Sun direction rotates in the XZ plane with Y component from angle.
+     */
+    private static void gl46core$captureExtendedLighting(
+            GlobalLightState light, float celestialAngle, float sunBrightness,
+            boolean hasSky, int dimId, float rain, float thunder) {
+
+        // Sun/moon direction from celestial angle
+        // MC renders sun rotating around X axis: angle 0 = noon (sun at top)
+        float angleRad = celestialAngle * (float)(Math.PI * 2.0);
+        float sunY =  (float) Math.cos(angleRad);
+        float sunZ = -(float) Math.sin(angleRad);
+        scratchSunDir.set(0, sunY, sunZ).normalize();
+        scratchMoonDir.set(0, -sunY, -sunZ).normalize();
+
+        // Skylight strength from sun brightness (0 at night, 1 at day)
+        float skylightStrength = hasSky ? sunBrightness : 0.0f;
+
+        light.setSunMoon(celestialAngle, scratchSunDir, scratchMoonDir, skylightStrength);
+
+        // Sun color: warm white at noon, orange at sunrise/sunset, dim at night
+        // Night detection: celestialAngle > 0.23 && < 0.77 roughly
+        boolean isNight = celestialAngle > 0.27f && celestialAngle < 0.73f;
+        float dayFactor = Math.max(0, sunBrightness);
+        scratchSunCol.set(
+            1.0f * dayFactor,
+            0.95f * dayFactor,
+            0.9f * dayFactor
+        );
+        // Moon color: cool blue-white, dimmer
+        float moonFactor = isNight ? (1.0f - dayFactor) * 0.3f : 0.0f;
+        scratchMoonCol.set(
+            0.6f * moonFactor,
+            0.7f * moonFactor,
+            1.0f * moonFactor
+        );
+
+        // Weather darkening: rain reduces light, thunder more so
+        float weatherDarken = rain * 0.3f + thunder * 0.2f;
+
+        // Block light scale: 1.0 normally, could be modified by dimension
+        float blockLightScale = 1.0f;
+
+        // Lighting flags
+        int flags = 0;
+        if (hasSky)    flags |= GlobalLightState.FLAG_HAS_SKY;
+        if (dimId == -1) flags |= GlobalLightState.FLAG_NETHER;
+        if (dimId == 1)  flags |= GlobalLightState.FLAG_END;
+        if (isNight)     flags |= GlobalLightState.FLAG_NIGHT;
+        if (rain > 0)    flags |= GlobalLightState.FLAG_RAINING;
+        if (thunder > 0) flags |= GlobalLightState.FLAG_THUNDERING;
+
+        light.setEnvironment(scratchSunCol, scratchMoonCol,
+            blockLightScale, weatherDarken, flags);
     }
 }
