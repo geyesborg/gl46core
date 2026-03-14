@@ -131,6 +131,7 @@ public final class ShaderVariants {
         GL46Core.LOGGER.info("Compiled shader variant 0x{} ({})", Integer.toHexString(key), describeKey(key));
         cache.put(key, prog);
         allPrograms.add(prog);
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordVariantCompiled();
         return prog;
     }
 

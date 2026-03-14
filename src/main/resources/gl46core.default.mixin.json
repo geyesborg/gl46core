@@ -17,7 +17,8 @@
     "MixinFMLClientHandler",
     "MixinFMLClientHandlerConfig",
     "MixinCloudRenderer",
-    "MixinActiveRenderInfo"
+    "MixinActiveRenderInfo",
+    "MixinEntityRenderer"
   ],
   "mixins": [],
   "server": [],

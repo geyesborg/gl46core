@@ -211,6 +211,7 @@ public final class CoreVboDrawHandler {
         } else {
             GL11.glDrawArrays(mode, first, count);
         }
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(count);
     }
 
     private static void drawQuadsAsTriangles(int first, int count) {

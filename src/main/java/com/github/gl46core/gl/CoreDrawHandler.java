@@ -208,6 +208,7 @@ public final class CoreDrawHandler {
         } else {
             GL11.glDrawArrays(drawMode, 0, vertexCount);
         }
+        com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
 
         } catch (Throwable t) {
             com.github.gl46core.GL46Core.LOGGER.error("[CoreDrawHandler] Exception during draw:", t);

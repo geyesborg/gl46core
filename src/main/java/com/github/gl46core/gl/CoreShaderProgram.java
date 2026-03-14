@@ -182,6 +182,7 @@ public final class CoreShaderProgram {
         if (programId != lastProgramId) {
             GL20.glUseProgram(programId);
             lastProgramId = programId;
+            com.github.gl46core.api.debug.RenderProfiler.INSTANCE.recordShaderSwitch();
         }
 
         CoreMatrixStack ms = CoreMatrixStack.INSTANCE;

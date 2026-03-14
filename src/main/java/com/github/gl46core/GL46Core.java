@@ -50,6 +50,9 @@ public class GL46Core {
             com.github.gl46core.gl.GLDiagnostics.INSTANCE.printFinalSummary();
         }, "gl46core-diag-shutdown"));
 
+        // Register debug overlay keybind (F4)
+        com.github.gl46core.client.DebugOverlayHandler.register();
+
         logDeprecatedUsageSummary();
     }
 
