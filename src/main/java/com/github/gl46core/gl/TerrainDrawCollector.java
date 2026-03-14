@@ -142,6 +142,15 @@ public final class TerrainDrawCollector {
         // Configure terrain VAO format once (DSA), then only swap VBO per chunk
         CoreVboDrawHandler.ensureTerrainVaoDSA();
 
+        // All terrain is GL_QUADS — find max vertex count, ensure EBO + bind ONCE
+        int maxVerts = 0;
+        for (int i = 0; i < count; i++) {
+            int v = packets[i].getVertexCount();
+            if (v > maxVerts) maxVerts = v;
+        }
+        int ebo = QuadIndexBuffer.ensure(maxVerts / 4);
+        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
+
         for (int i = 0; i < count; i++) {
             DrawPacket p = packets[i];
 
@@ -155,17 +164,10 @@ public final class TerrainDrawCollector {
             // Upload pre-computed matrices directly to PerObject UBO
             shader.uploadMatricesDirect(chunkMVP, chunkMV);
 
-            // Draw — GL_QUADS converted to GL_TRIANGLES via shared index buffer
+            // Draw — GL_QUADS→GL_TRIANGLES via pre-bound index buffer
             int vertexCount = p.getVertexCount();
-            if (p.getDrawMode() == GL11.GL_QUADS) {
-                int quadCount = vertexCount / 4;
-                int indexCount = quadCount * 6;
-                int ebo = QuadIndexBuffer.ensure(quadCount);
-                GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
-                GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
-            } else {
-                GL11.glDrawArrays(p.getDrawMode(), p.getVertexOffset(), vertexCount);
-            }
+            int indexCount = (vertexCount / 4) * 6;
+            GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0);
 
             RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
         }
