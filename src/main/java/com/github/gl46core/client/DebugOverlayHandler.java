@@ -40,5 +40,9 @@ public final class DebugOverlayHandler {
         event.getRight().add(String.format("GPU upload: %s | Buffers: %d",
                 uploadStr,
                 com.github.gl46core.api.render.gpu.GpuBufferPool.INSTANCE.getBufferCount()));
+
+        com.github.gl46core.gl.TerrainDrawCollector t = com.github.gl46core.gl.TerrainDrawCollector.INSTANCE;
+        event.getRight().add(String.format("Terrain queue: %d chunks | %d verts | %d layers sorted",
+                t.getFrameChunksQueued(), t.getFrameVerticesQueued(), t.getFrameSortedLayers()));
     }
 }

@@ -5,6 +5,8 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL31;
 import org.lwjgl.opengl.GL45;
 
+import org.joml.Matrix4f;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -311,6 +313,30 @@ public final class CoreShaderProgram {
             lastStateGeneration = gen;
             lastFormatFlags = formatFlags;
         }
+    }
+
+    /**
+     * Upload pre-computed matrices directly to the PerObject UBO.
+     * Bypasses CoreMatrixStack dirty flag tracking.
+     * Use when the caller has already computed the correct MVP/MV
+     * (e.g. terrain queue with pre-sorted, pre-computed transforms).
+     */
+    public void uploadMatricesDirect(Matrix4f mvp, Matrix4f mv) {
+        int objectUbo = RenderContext.get().handle(RenderContext.GL.PER_DRAW_UBO);
+        if (objectUbo == 0) return;
+        mvp.get(0, poBuf);
+        mv.get(64, poBuf);
+        poBuf.position(0).limit(PO_SIZE);
+        GL45.glNamedBufferSubData(objectUbo, 0, poBuf);
+    }
+
+    /**
+     * Invalidate cached matrix state so the next bind() re-uploads PerObject UBO.
+     * Call after external code has written to the PerObject UBO directly.
+     */
+    public void invalidateMatrices() {
+        lastMvDirty = true;
+        lastProjDirty = true;
     }
 
     /** Unbind shader */

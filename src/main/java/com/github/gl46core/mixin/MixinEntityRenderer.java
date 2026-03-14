@@ -41,6 +41,9 @@ public class MixinEntityRenderer {
 
         // Reset per-frame translation counter
         LegacyDrawTranslator.INSTANCE.beginFrame();
+
+        // Reset terrain queue stats
+        com.github.gl46core.gl.TerrainDrawCollector.INSTANCE.resetFrameStats();
     }
 
     /**

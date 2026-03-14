@@ -4,6 +4,7 @@ import com.github.gl46core.api.debug.RenderProfiler;
 import com.github.gl46core.api.render.DrawPacket;
 import com.github.gl46core.api.render.PassType;
 import com.github.gl46core.api.translate.LegacyStateInterpreter;
+import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 
@@ -33,6 +34,11 @@ public final class TerrainDrawCollector {
     // Captured once per layer (state is uniform across all chunks in a layer)
     private int layerVariantKey;
     private int layerMaterialHash;
+
+    // Per-frame stats (reset each beginFrame, accumulated across layers)
+    private int frameChunksQueued;
+    private int frameVerticesQueued;
+    private int frameSortedLayers;
 
     private TerrainDrawCollector() {
         packets = new DrawPacket[INITIAL_CAPACITY];
@@ -90,20 +96,48 @@ public final class TerrainDrawCollector {
         }
     }
 
+    // Reusable matrices — avoid per-frame allocation
+    private final Matrix4f baseProj = new Matrix4f();
+    private final Matrix4f baseMV = new Matrix4f();
+    private final Matrix4f chunkMV = new Matrix4f();
+    private final Matrix4f chunkMVP = new Matrix4f();
+
     /**
      * Sort collected packets and execute draws.
      *
      * Sorts front-to-back (opaque) to reduce overdraw, then iterates
      * packets issuing GL draws through the existing shader/VAO system.
+     *
+     * Optimization: captures base projection/modelview once, then computes
+     * per-chunk MVP/MV directly without push/translate/pop. Shader variant,
+     * scene UBO, and material UBO are bound once — only the PerObject UBO
+     * (128 bytes of matrices) is uploaded per chunk.
      */
     public void sortAndExecute() {
         if (count == 0) return;
+
+        // Accumulate stats
+        frameSortedLayers++;
+        frameChunksQueued += count;
+        for (int i = 0; i < count; i++) {
+            frameVerticesQueued += packets[i].getVertexCount();
+        }
 
         // Sort by sort key (front-to-back for opaque, back-to-front for translucent)
         Arrays.sort(packets, 0, count,
             (a, b) -> Long.compare(a.getSortKey(), b.getSortKey()));
 
-        CoreShaderProgram.INSTANCE.ensureInitialized();
+        CoreShaderProgram shader = CoreShaderProgram.INSTANCE;
+        shader.ensureInitialized();
+
+        // Capture base matrices (set by MC before renderChunkLayer)
+        CoreMatrixStack ms = CoreMatrixStack.INSTANCE;
+        baseProj.set(ms.getProjection());
+        baseMV.set(ms.getModelView());
+
+        // Bind shader variant + upload scene/material UBOs once.
+        // This also uploads PerObject with current matrices (we overwrite per chunk).
+        shader.bind(true, true, false, true);
 
         for (int i = 0; i < count; i++) {
             DrawPacket p = packets[i];
@@ -115,13 +149,12 @@ public final class TerrainDrawCollector {
             // Set up terrain vertex attribs on the terrain VAO
             CoreVboDrawHandler.setupArrayPointers();
 
-            // Push matrix and translate to chunk world position
-            CoreMatrixStack ms = CoreMatrixStack.INSTANCE;
-            ms.pushMatrix();
-            ms.translate(p.getTranslateX(), p.getTranslateY(), p.getTranslateZ());
+            // Compute chunk-specific matrices directly (no push/translate/pop)
+            baseMV.translate(p.getTranslateX(), p.getTranslateY(), p.getTranslateZ(), chunkMV);
+            baseProj.mul(chunkMV, chunkMVP);
 
-            // Bind shader variant and upload UBOs (terrain format: color + tex + lightmap)
-            CoreShaderProgram.INSTANCE.bind(true, true, false, true);
+            // Upload pre-computed matrices directly to PerObject UBO
+            shader.uploadMatricesDirect(chunkMVP, chunkMV);
 
             // Draw — GL_QUADS converted to GL_TRIANGLES via shared index buffer
             int vertexCount = p.getVertexCount();
@@ -136,9 +169,10 @@ public final class TerrainDrawCollector {
             }
 
             RenderProfiler.INSTANCE.recordDrawCall(vertexCount);
-
-            ms.popMatrix();
         }
+
+        // Invalidate matrix cache so next bind() re-uploads from CoreMatrixStack
+        shader.invalidateMatrices();
 
         // Unbind VBO (matches vanilla cleanup)
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
@@ -147,6 +181,19 @@ public final class TerrainDrawCollector {
     }
 
     public int getCount() { return count; }
+
+    // ── Stats for F3 overlay ──
+
+    /** Call at frame start to reset per-frame stats. */
+    public void resetFrameStats() {
+        frameChunksQueued = 0;
+        frameVerticesQueued = 0;
+        frameSortedLayers = 0;
+    }
+
+    public int getFrameChunksQueued()   { return frameChunksQueued; }
+    public int getFrameVerticesQueued() { return frameVerticesQueued; }
+    public int getFrameSortedLayers()   { return frameSortedLayers; }
 
     private void grow() {
         int newCap = packets.length * 2;
