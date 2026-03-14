@@ -145,6 +145,16 @@ public final class CoreVboDrawHandler {
     }
 
     /**
+     * Bind an EBO to the terrain VAO via DSA.
+     * Associates the index buffer with the VAO directly — no global
+     * GL_ELEMENT_ARRAY_BUFFER state change needed.
+     */
+    public static void bindTerrainEbo(int eboId) {
+        int vao = RenderContext.get().handle(RenderContext.GL.TERRAIN_VAO);
+        GL45.glVertexArrayElementBuffer(vao, eboId);
+    }
+
+    /**
      * Replaces VboRenderList.setupArrayPointers() (legacy path).
      * Assumes the chunk VBO is already bound to GL_ARRAY_BUFFER.
      * Sets up vertex attributes on a VAO using the fixed BLOCK vertex format.

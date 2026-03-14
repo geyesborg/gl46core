@@ -9,6 +9,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 
 import java.util.Arrays;
+import java.util.Comparator;
 
 /**
  * Collects terrain chunk draws into DrawPackets, sorts them,
@@ -27,6 +28,9 @@ public final class TerrainDrawCollector {
     public static final TerrainDrawCollector INSTANCE = new TerrainDrawCollector();
 
     private static final int INITIAL_CAPACITY = 512;
+
+    private static final Comparator<DrawPacket> SORT_KEY_COMPARATOR =
+            (a, b) -> Long.compare(a.getSortKey(), b.getSortKey());
 
     private DrawPacket[] packets;
     private int count;
@@ -124,8 +128,7 @@ public final class TerrainDrawCollector {
         }
 
         // Sort by sort key (front-to-back for opaque, back-to-front for translucent)
-        Arrays.sort(packets, 0, count,
-            (a, b) -> Long.compare(a.getSortKey(), b.getSortKey()));
+        Arrays.sort(packets, 0, count, SORT_KEY_COMPARATOR);
 
         CoreShaderProgram shader = CoreShaderProgram.INSTANCE;
         shader.ensureInitialized();
@@ -159,9 +162,9 @@ public final class TerrainDrawCollector {
         // Configure terrain VAO format once (DSA), then only swap VBO per chunk
         CoreVboDrawHandler.ensureTerrainVaoDSA();
 
-        // EBO: ensure + bind once (all terrain is GL_QUADS)
+        // EBO: ensure + bind to VAO via DSA (all terrain is GL_QUADS)
         int ebo = QuadIndexBuffer.ensure(maxVerts / 4);
-        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
+        CoreVboDrawHandler.bindTerrainEbo(ebo);
 
         // ── Pass 2: Issue draws with per-chunk binding range (no data transfer) ──
         for (int i = 0; i < count; i++) {
@@ -185,8 +188,7 @@ public final class TerrainDrawCollector {
         objBuf.restorePerObjectBinding();
         shader.invalidateMatrices();
 
-        // Unbind VBO (matches vanilla cleanup)
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        // Mark terrain VAO as unbound for non-terrain paths
         CoreVboDrawHandler.setVboBound(false);
         CoreVboDrawHandler.setTerrainVaoUnbound();
     }
