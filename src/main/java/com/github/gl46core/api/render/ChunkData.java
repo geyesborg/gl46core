@@ -11,18 +11,28 @@ import org.joml.Vector3i;
  *
  * MC 1.12.2 chunk sections are 16x16x16 blocks.
  *
- * GPU layout (std140, 48 bytes):
+ * GPU layout (std140, 64 bytes):
  *   ivec4 chunkOrigin           offset 0    (xyz=section origin in blocks, w=regionId)
  *   ivec4 bounds                offset 16   (xyz=section size always 16, w=biomeIndex)
  *   int   visibilityFlags       offset 32   (per-face visibility from PVS)
  *   int   meshSectionOffset     offset 36   (offset into vertex buffer)
  *   int   drawCommandOffset     offset 40   (offset into indirect draw buffer)
  *   int   lightVolumeIndex      offset 44   (index into light volume array)
- * Total: 48 bytes
+ *   int   biomeLightIndex       offset 48   (biome-specific lighting/tint index)
+ *   int   localLightListOffset  offset 52   (offset into Light Index SSBO)
+ *   int   localLightCount       offset 56   (number of dynamic lights in this section)
+ *   int   chunkLightFlags       offset 60   (lighting state bitfield)
+ * Total: 64 bytes
  */
 public final class ChunkData {
 
-    public static final int GPU_SIZE = 48;
+    public static final int GPU_SIZE = 64;
+
+    // Chunk lighting flag bits
+    public static final int CLIGHT_HAS_SKYLIGHT     = 1;
+    public static final int CLIGHT_HAS_BLOCKLIGHT   = 1 << 1;
+    public static final int CLIGHT_UNDERGROUND       = 1 << 2;
+    public static final int CLIGHT_EMISSIVE_BLOCKS   = 1 << 3;
 
     // Visibility flag bits (which faces are potentially visible from camera)
     public static final int VIS_DOWN  = 1;
@@ -48,6 +58,10 @@ public final class ChunkData {
     private int meshSectionOffset;
     private int drawCommandOffset;
     private int lightVolumeIndex = -1;
+    private int biomeLightIndex;
+    private int localLightListOffset;
+    private int localLightCount;
+    private int chunkLightFlags;
 
     // CPU-side tracking
     private boolean dirty;          // needs rebuild
@@ -68,6 +82,12 @@ public final class ChunkData {
     public void setMeshSectionOffset(int off)    { this.meshSectionOffset = off; }
     public void setDrawCommandOffset(int off)    { this.drawCommandOffset = off; }
     public void setLightVolumeIndex(int idx)     { this.lightVolumeIndex = idx; }
+    public void setBiomeLightIndex(int idx)       { this.biomeLightIndex = idx; }
+    public void setLocalLightList(int offset, int count) {
+        this.localLightListOffset = offset;
+        this.localLightCount = count;
+    }
+    public void setChunkLightFlags(int flags)     { this.chunkLightFlags = flags; }
     public void setDirty(boolean dirty)          { this.dirty = dirty; }
     public void setEmpty(boolean empty)          { this.empty = empty; }
     public void setLastBuildFrame(long frame)    { this.lastBuildFrame = frame; }
@@ -87,6 +107,10 @@ public final class ChunkData {
     public int  getMeshSectionOffset() { return meshSectionOffset; }
     public int  getDrawCommandOffset() { return drawCommandOffset; }
     public int  getLightVolumeIndex()  { return lightVolumeIndex; }
+    public int  getBiomeLightIndex()   { return biomeLightIndex; }
+    public int  getLocalLightListOffset() { return localLightListOffset; }
+    public int  getLocalLightCount()   { return localLightCount; }
+    public int  getChunkLightFlags()   { return chunkLightFlags; }
     public boolean isDirty()           { return dirty; }
     public boolean isEmpty()           { return empty; }
     public long getLastBuildFrame()    { return lastBuildFrame; }

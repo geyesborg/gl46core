@@ -42,14 +42,16 @@ import java.nio.ByteOrder;
  *   float celestialAngle        offset 384
  *   float sunBrightness         offset 388
  *   int   frameIndex            offset 392
- *   int   _pad0                 offset 396
- *   mat4  prevViewMatrix        offset 400
- *   mat4  prevProjection        offset 464
- * Total: 528 bytes
+ *   int   lightingFlags         offset 396
+ *   vec4  sunColor              offset 400   (rgb = sun color, a = blockLightScale)
+ *   vec4  moonColor             offset 416   (rgb = moon color, a = weatherDarken)
+ *   mat4  prevViewMatrix        offset 432
+ *   mat4  prevProjection        offset 496
+ * Total: 560 bytes
  */
 public final class SceneData {
 
-    public static final int GPU_SIZE = 528;
+    public static final int GPU_SIZE = 560;
 
     private final ByteBuffer buffer = ByteBuffer.allocateDirect(GPU_SIZE).order(ByteOrder.nativeOrder());
 
@@ -147,13 +149,27 @@ public final class SceneData {
         buffer.putFloat(384, dim.getCelestialAngle());
         buffer.putFloat(388, dim.getSunBrightness());
 
-        // Frame
+        // Frame + flags
         buffer.putInt(392, (int)(frame.getFrameIndex() & 0xFFFFFFFFL));
-        buffer.putInt(396, 0); // padding
+        buffer.putInt(396, light.getLightingFlags());
+
+        // Sun color (vec4, a=blockLightScale)
+        Vector3f sunCol = light.getSunColor();
+        buffer.putFloat(400, sunCol.x);
+        buffer.putFloat(404, sunCol.y);
+        buffer.putFloat(408, sunCol.z);
+        buffer.putFloat(412, light.getBlockLightGlobalScale());
+
+        // Moon color (vec4, a=weatherDarken)
+        Vector3f moonCol = light.getMoonColor();
+        buffer.putFloat(416, moonCol.x);
+        buffer.putFloat(420, moonCol.y);
+        buffer.putFloat(424, moonCol.z);
+        buffer.putFloat(428, light.getWeatherDarken());
 
         // Previous frame matrices
-        cam.getPrevViewMatrix().get(400, buffer);
-        cam.getPrevProjection().get(464, buffer);
+        cam.getPrevViewMatrix().get(432, buffer);
+        cam.getPrevProjection().get(496, buffer);
     }
 
     /**

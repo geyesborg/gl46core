@@ -72,6 +72,11 @@ public final class ChunkBuffer {
         stagingBuffer.putInt(offset + 36, chunk.getMeshSectionOffset());
         stagingBuffer.putInt(offset + 40, chunk.getDrawCommandOffset());
         stagingBuffer.putInt(offset + 44, chunk.getLightVolumeIndex());
+        // int biomeLightIndex, localLightListOffset, localLightCount, chunkLightFlags
+        stagingBuffer.putInt(offset + 48, chunk.getBiomeLightIndex());
+        stagingBuffer.putInt(offset + 52, chunk.getLocalLightListOffset());
+        stagingBuffer.putInt(offset + 56, chunk.getLocalLightCount());
+        stagingBuffer.putInt(offset + 60, chunk.getChunkLightFlags());
 
         return index;
     }

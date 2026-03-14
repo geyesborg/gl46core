@@ -23,11 +23,24 @@ public final class GlobalLightState {
     // Global ambient
     private final Vector3f ambient = new Vector3f();
 
-    // Extended: sun/moon direction for shaderpacks
+    // Extended: sun/moon direction + color for shaderpacks
     private final Vector3f sunDirection  = new Vector3f(0, 1, 0);
     private final Vector3f moonDirection = new Vector3f(0, -1, 0);
+    private final Vector3f sunColor  = new Vector3f(1, 1, 1);
+    private final Vector3f moonColor = new Vector3f(0.6f, 0.7f, 1.0f);
     private float sunAngle;
     private float skylightStrength = 1.0f;
+    private float blockLightGlobalScale = 1.0f;
+    private float weatherDarken;
+    private int lightingFlags;  // bitfield: dimension, time-of-day, etc.
+
+    // Lighting flag bits
+    public static final int FLAG_HAS_SKY      = 1;
+    public static final int FLAG_NETHER       = 1 << 1;
+    public static final int FLAG_END          = 1 << 2;
+    public static final int FLAG_NIGHT        = 1 << 3;
+    public static final int FLAG_RAINING      = 1 << 4;
+    public static final int FLAG_THUNDERING   = 1 << 5;
 
     public GlobalLightState() {}
 
@@ -54,6 +67,18 @@ public final class GlobalLightState {
         this.skylightStrength = skylightStrength;
     }
 
+    /**
+     * Set extended environment lighting state.
+     */
+    public void setEnvironment(Vector3f sunCol, Vector3f moonCol,
+                               float blockLightScale, float weatherDarken, int flags) {
+        this.sunColor.set(sunCol);
+        this.moonColor.set(moonCol);
+        this.blockLightGlobalScale = blockLightScale;
+        this.weatherDarken = weatherDarken;
+        this.lightingFlags = flags;
+    }
+
     // ── Accessors ──
 
     public Vector4f getLight0Position() { return light0Position; }
@@ -64,6 +89,11 @@ public final class GlobalLightState {
 
     public Vector3f getSunDirection()   { return sunDirection; }
     public Vector3f getMoonDirection()  { return moonDirection; }
+    public Vector3f getSunColor()       { return sunColor; }
+    public Vector3f getMoonColor()      { return moonColor; }
     public float    getSunAngle()       { return sunAngle; }
-    public float    getSkylightStrength() { return skylightStrength; }
+    public float    getSkylightStrength()     { return skylightStrength; }
+    public float    getBlockLightGlobalScale() { return blockLightGlobalScale; }
+    public float    getWeatherDarken()  { return weatherDarken; }
+    public int      getLightingFlags()  { return lightingFlags; }
 }
