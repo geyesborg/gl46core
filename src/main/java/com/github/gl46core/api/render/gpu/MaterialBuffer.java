@@ -22,6 +22,8 @@ public final class MaterialBuffer {
     public static final int BINDING_POINT = 0;
     public static final int ENTRY_SIZE = MaterialData.GPU_SIZE; // 64 bytes
 
+    private static final int DEFAULT_CAPACITY = 256;
+
     private GpuBuffer gpuBuffer;
     private ByteBuffer stagingBuffer;
     private int capacity;       // max materials
@@ -44,7 +46,8 @@ public final class MaterialBuffer {
      * Write a material entry at the given index.
      */
     public void setMaterial(int index, MaterialData mat) {
-        if (index < 0 || index >= capacity) return;
+        if (index < 0) return;
+        while (index >= capacity) grow();
         int offset = index * ENTRY_SIZE;
 
         stagingBuffer.putInt(offset, mat.getMaterialId());
@@ -91,6 +94,31 @@ public final class MaterialBuffer {
             GpuBufferPool.INSTANCE.destroy(gpuBuffer);
             gpuBuffer = null;
         }
+    }
+
+    /**
+     * Grow capacity by 2x. Recreates the immutable GPU buffer.
+     */
+    private void grow() {
+        int newCapacity = Math.max(capacity * 2, DEFAULT_CAPACITY);
+        long newSize = (long) newCapacity * ENTRY_SIZE;
+
+        GpuBuffer newBuf = GpuBufferPool.INSTANCE.createDynamicSSBO(newSize);
+        if (gpuBuffer != null) {
+            GpuBufferPool.INSTANCE.destroy(gpuBuffer);
+        }
+        gpuBuffer = newBuf;
+
+        ByteBuffer newStaging = ByteBuffer.allocateDirect((int) newSize).order(ByteOrder.nativeOrder());
+        if (stagingBuffer != null) {
+            int oldDataSize = count * ENTRY_SIZE;
+            stagingBuffer.position(0).limit(oldDataSize);
+            newStaging.put(stagingBuffer);
+            newStaging.clear();
+        }
+        stagingBuffer = newStaging;
+        capacity = newCapacity;
+        dirty = true; // must re-upload after buffer recreation
     }
 
     public int getCount()    { return count; }

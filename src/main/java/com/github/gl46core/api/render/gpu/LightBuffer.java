@@ -29,10 +29,13 @@ public final class LightBuffer {
     public static final int HEADER_SIZE = 16;
     public static final int ENTRY_SIZE = LightData.GPU_SIZE; // 48 bytes
 
+    private static final int DEFAULT_CAPACITY = 64;
+
     private GpuBuffer gpuBuffer;
     private ByteBuffer stagingBuffer;
     private int capacity;
     private int count;
+    private int highWaterMark;
 
     public LightBuffer() {}
 
@@ -54,10 +57,10 @@ public final class LightBuffer {
     }
 
     /**
-     * Add a light. Returns the index, or -1 if full.
+     * Add a light. Grows the buffer if full.
      */
     public int addLight(LightData light) {
-        if (count >= capacity) return -1;
+        if (count >= capacity) grow();
         int index = count++;
         int offset = HEADER_SIZE + index * ENTRY_SIZE;
 
@@ -84,6 +87,8 @@ public final class LightBuffer {
      * Upload header + lights to GPU.
      */
     public void flush() {
+        if (count > highWaterMark) highWaterMark = count;
+
         // Write header
         stagingBuffer.putInt(0, count);
         stagingBuffer.putInt(4, capacity);
@@ -93,6 +98,30 @@ public final class LightBuffer {
         long size = HEADER_SIZE + (long) count * ENTRY_SIZE;
         stagingBuffer.position(0).limit((int) size);
         gpuBuffer.upload(stagingBuffer, 0, size);
+    }
+
+    /**
+     * Grow capacity by 2x. Recreates the immutable GPU buffer.
+     */
+    private void grow() {
+        int newCapacity = Math.max(capacity * 2, DEFAULT_CAPACITY);
+        long newSize = HEADER_SIZE + (long) newCapacity * ENTRY_SIZE;
+
+        GpuBuffer newBuf = GpuBufferPool.INSTANCE.createDynamicSSBO(newSize);
+        if (gpuBuffer != null) {
+            GpuBufferPool.INSTANCE.destroy(gpuBuffer);
+        }
+        gpuBuffer = newBuf;
+
+        ByteBuffer newStaging = ByteBuffer.allocateDirect((int) newSize).order(ByteOrder.nativeOrder());
+        if (stagingBuffer != null) {
+            int oldDataSize = HEADER_SIZE + count * ENTRY_SIZE;
+            stagingBuffer.position(0).limit(oldDataSize);
+            newStaging.put(stagingBuffer);
+            newStaging.clear();
+        }
+        stagingBuffer = newStaging;
+        capacity = newCapacity;
     }
 
     /**
@@ -109,6 +138,7 @@ public final class LightBuffer {
         }
     }
 
-    public int getCount()    { return count; }
-    public int getCapacity() { return capacity; }
+    public int getCount()         { return count; }
+    public int getCapacity()      { return capacity; }
+    public int getHighWaterMark() { return highWaterMark; }
 }

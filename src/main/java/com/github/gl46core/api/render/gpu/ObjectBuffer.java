@@ -22,10 +22,13 @@ public final class ObjectBuffer {
     public static final int BINDING_POINT = 1;
     public static final int ENTRY_SIZE = ObjectData.GPU_SIZE; // 224 bytes
 
+    private static final int DEFAULT_CAPACITY = 512;
+
     private GpuBuffer gpuBuffer;
     private ByteBuffer stagingBuffer;
     private int capacity;
     private int count;
+    private int highWaterMark;
 
     public ObjectBuffer() {}
 
@@ -51,7 +54,7 @@ public final class ObjectBuffer {
      * Returns the index (for use in RenderSubmission.setObjectIndex).
      */
     public int addObject(ObjectData obj) {
-        if (count >= capacity) return -1;
+        if (count >= capacity) grow();
         int index = count++;
         int offset = index * ENTRY_SIZE;
 
@@ -80,9 +83,34 @@ public final class ObjectBuffer {
      */
     public void flush() {
         if (count == 0) return;
+        if (count > highWaterMark) highWaterMark = count;
         long size = (long) count * ENTRY_SIZE;
         stagingBuffer.position(0).limit((int) size);
         gpuBuffer.upload(stagingBuffer, 0, size);
+    }
+
+    /**
+     * Grow capacity by 2x. Recreates the immutable GPU buffer.
+     */
+    private void grow() {
+        int newCapacity = Math.max(capacity * 2, DEFAULT_CAPACITY);
+        long newSize = (long) newCapacity * ENTRY_SIZE;
+
+        GpuBuffer newBuf = GpuBufferPool.INSTANCE.createDynamicSSBO(newSize);
+        if (gpuBuffer != null) {
+            GpuBufferPool.INSTANCE.destroy(gpuBuffer);
+        }
+        gpuBuffer = newBuf;
+
+        ByteBuffer newStaging = ByteBuffer.allocateDirect((int) newSize).order(ByteOrder.nativeOrder());
+        if (stagingBuffer != null) {
+            int oldDataSize = count * ENTRY_SIZE;
+            stagingBuffer.position(0).limit(oldDataSize);
+            newStaging.put(stagingBuffer);
+            newStaging.clear();
+        }
+        stagingBuffer = newStaging;
+        capacity = newCapacity;
     }
 
     /**
@@ -99,6 +127,7 @@ public final class ObjectBuffer {
         }
     }
 
-    public int getCount()    { return count; }
-    public int getCapacity() { return capacity; }
+    public int getCount()         { return count; }
+    public int getCapacity()      { return capacity; }
+    public int getHighWaterMark() { return highWaterMark; }
 }
